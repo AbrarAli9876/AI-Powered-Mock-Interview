@@ -1,0 +1,183 @@
+# ============================================================
+# AI MOCK INTERVIEW - GITIGNORE
+# ============================================================
+
+
+# ============================================================
+# ENVIRONMENT VARIABLES / SECRETS
+# ============================================================
+
+.env
+.env.*
+!.env.example
+
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+frontend/front/
+frontend/.front/
+# ============================================================
+# PYTHON / BACKEND
+# ============================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+*.so
+
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+backend/final/
+backend/.final/
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Type checking / linting
+.mypy_cache/
+.pyre/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+
+# ============================================================
+# DATABASE / LOCAL DATA
+# ============================================================
+
+*.db
+*.sqlite
+*.sqlite3
+
+backend/*.db
+backend/**/*.db
+
+# MySQL dumps
+*.sql
+*.dump
+
+
+# ============================================================
+# FRONTEND / NODE
+# ============================================================
+
+node_modules/
+frontend/node_modules/
+
+# Build output
+dist/
+build/
+
+frontend/dist/
+frontend/build/
+
+# Vite
+.vite/
+
+# TypeScript
+*.tsbuildinfo
+
+
+# ============================================================
+# IDE / EDITOR
+# ============================================================
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+.idea/
+*.iml
+
+# VS Code local history
+.history/
+
+
+# ============================================================
+# OPERATING SYSTEM
+# ============================================================
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+
+# ============================================================
+# LOGS
+# ============================================================
+
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+
+# ============================================================
+# TEMPORARY FILES
+# ============================================================
+
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+temp/
+tmp/
+
+
+# ============================================================
+# PYTHON / LOCAL DEVELOPMENT FILES
+# ============================================================
+
+*.pid
+*.seed
+
+# Local configuration
+local_settings.py
+
+
+# ============================================================
+# GENERATED / SECRET FILES
+# ============================================================
+
+*.pem
+*.key
+*.crt
+
+secrets/
+credentials/
