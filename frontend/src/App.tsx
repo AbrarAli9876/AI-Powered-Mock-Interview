@@ -5,11 +5,11 @@ import {
   Routes,
 } from "react-router-dom";
 
+import Landing from "./pages/Landing";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
-import Dashboard from "./pages/Dashboard";
-
+import InterviewSetup from "./pages/InterviewSetup";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -19,11 +19,11 @@ function App() {
     <BrowserRouter>
       <Routes>
 
-        {/* Public pages */}
+        {/* Public */}
 
         <Route
           path="/"
-          element={<Home />}
+          element={<Landing />}
         />
 
         <Route
@@ -37,39 +37,44 @@ function App() {
         />
 
 
-        {/* Candidate pages */}
+        {/* Candidate */}
 
         <Route
           element={
-            <ProtectedRoute
-              requiredRole="user"
-            />
+            <ProtectedRoute requiredRole="user" />
           }
         >
+
           <Route
-            path="/dashboard"
-            element={<Dashboard />}
+            path="/home"
+            element={<Home />}
           />
+
+          <Route
+            path="/interviews/new"
+            element={<InterviewSetup />}
+          />
+
         </Route>
 
 
-        {/* Admin pages */}
+        {/* Admin */}
 
         <Route
           element={
-            <ProtectedRoute
-              requiredRole="admin"
-            />
+            <ProtectedRoute requiredRole="admin" />
           }
         >
+
           <Route
             path="/admin"
             element={<AdminDashboard />}
           />
+
         </Route>
 
 
-        {/* Unknown route */}
+        {/* Fallback */}
 
         <Route
           path="*"

@@ -1,23 +1,183 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
+interface CurrentUser {
+  id: number;
+  full_name: string;
+  email: string;
+  role: "user" | "admin";
+  is_active: boolean;
+}
+
+interface StatCardProps {
+  label: string;
+  value: string;
+  description: string;
+}
+
+function StatCard({
+  label,
+  value,
+  description,
+}: StatCardProps) {
+  return (
+    <div
+      className="
+        rounded-2xl
+        border
+        border-white/[0.06]
+        bg-white/[0.025]
+        p-5
+        transition-all
+        duration-300
+        hover:border-white/[0.12]
+        hover:bg-white/[0.04]
+      "
+    >
+      <div
+        className="
+          font-mono
+          text-[10px]
+          uppercase
+          tracking-[0.16em]
+          text-slate-600
+        "
+      >
+        {label}
+      </div>
+
+      <div
+        className="
+          mt-3
+          font-display
+          text-3xl
+          font-semibold
+          tracking-tight
+          text-white
+        "
+      >
+        {value}
+      </div>
+
+      <div className="mt-1 text-xs text-slate-600">
+        {description}
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
   const navigate = useNavigate();
 
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem("access_token");
+    const storedUser = localStorage.getItem("user");
+
+    if (!storedToken || !storedUser) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    try {
+      const parsedUser: CurrentUser = JSON.parse(
+        storedUser
+      );
+
+      if (parsedUser.role === "admin") {
+        navigate("/admin", { replace: true });
+        return;
+      }
+
+      setUser(parsedUser);
+    } catch {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("user");
+
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    setIsLoading(false);
+  }, [navigate]);
+
+  const handleLogout = () => {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("user");
+
+    navigate("/login", {
+      replace: true,
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <div
+        className="
+          app-background
+          flex
+          min-h-screen
+          items-center
+          justify-center
+        "
+      >
+        <div className="text-center">
+
+          <div
+            className="
+              mx-auto
+              h-10
+              w-10
+              animate-spin
+              rounded-full
+              border-2
+              border-white/10
+              border-t-violet-400
+            "
+          />
+
+          <p
+            className="
+              mt-4
+              font-mono
+              text-[10px]
+              uppercase
+              tracking-[0.18em]
+              text-slate-600
+            "
+          >
+            Loading workspace
+          </p>
+
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  const firstName =
+    user.full_name.trim().split(" ")[0];
+
   return (
     <div className="app-background min-h-screen">
 
-      {/* Technical grid */}
+      {/* =====================================================
+          AMBIENT BACKGROUND
+          ===================================================== */}
 
       <div className="app-grid" />
-
-      {/* Ambient lights */}
 
       <div
         className="
           glow-orb
           glow-orb-violet
-          left-[-100px]
-          top-[160px]
+          left-[-150px]
+          top-[180px]
           animate-pulse-slow
         "
       />
@@ -26,35 +186,51 @@ export default function Home() {
         className="
           glow-orb
           glow-orb-cyan
-          right-[-80px]
-          top-[100px]
+          right-[-120px]
+          top-[320px]
           animate-pulse-slow
         "
       />
 
 
-      {/* ===================================================
+      {/* =====================================================
           NAVIGATION
-          =================================================== */}
+          ===================================================== */}
 
-      <header className="relative z-10">
+      <header
+        className="
+          relative
+          z-20
+          border-b
+          border-white/[0.06]
+          bg-black/10
+        "
+      >
 
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-7 lg:px-10">
+        <div
+          className="
+            mx-auto
+            flex
+            max-w-7xl
+            items-center
+            justify-between
+            px-6
+            py-5
+            lg:px-10
+          "
+        >
 
-          {/* Logo */}
+          {/* Brand */}
 
           <button
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/home")}
             className="
-              group
               flex
               items-center
               gap-3
-              bg-transparent
-              p-0
               text-left
             "
-            aria-label="AI Mock Interview home"
+            aria-label="Go to home"
           >
 
             <div
@@ -98,6 +274,7 @@ export default function Home() {
 
             </div>
 
+
             <div>
 
               <div
@@ -117,11 +294,11 @@ export default function Home() {
                   font-mono
                   text-[9px]
                   uppercase
-                  tracking-[0.22em]
-                  text-slate-500
+                  tracking-[0.2em]
+                  text-slate-600
                 "
               >
-                Intelligent Practice
+                Candidate workspace
               </div>
 
             </div>
@@ -129,47 +306,61 @@ export default function Home() {
           </button>
 
 
-          {/* Navigation actions */}
+          {/* User controls */}
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+
+            <div className="hidden text-right sm:block">
+
+              <div className="text-sm font-medium text-slate-200">
+                {user.full_name}
+              </div>
+
+              <div
+                className="
+                  font-mono
+                  text-[9px]
+                  uppercase
+                  tracking-[0.16em]
+                  text-slate-600
+                "
+              >
+                Candidate
+              </div>
+
+            </div>
+
+
+            <div
+              className="
+                hidden
+                h-9
+                w-px
+                bg-white/[0.08]
+                sm:block
+              "
+            />
+
 
             <button
-              onClick={() => navigate("/login")}
+              onClick={handleLogout}
               className="
                 rounded-lg
                 border
                 border-white/10
-                bg-white/[0.03]
+                bg-white/[0.025]
                 px-4
-                py-2.5
+                py-2
                 text-sm
                 font-medium
-                text-slate-300
-                hover:border-white/20
-                hover:bg-white/[0.07]
-                hover:text-white
+                text-slate-400
+                transition
+                hover:border-red-400/20
+                hover:bg-red-400/[0.04]
+                hover:text-red-300
               "
             >
-              Sign In
-            </button>
-
-            <button
-              onClick={() => navigate("/register")}
-              className="
-                rounded-lg
-                border
-                border-violet-400/30
-                bg-violet-500/15
-                px-4
-                py-2.5
-                text-sm
-                font-semibold
-                text-violet-200
-                shadow-[0_0_25px_rgba(139,92,246,0.12)]
-                hover:bg-violet-500/25
-              "
-            >
-              Create account
+              Logout
             </button>
 
           </div>
@@ -179,40 +370,212 @@ export default function Home() {
       </header>
 
 
-      {/* ===================================================
-          HERO
-          =================================================== */}
+      {/* =====================================================
+          MAIN CONTENT
+          ===================================================== */}
 
-      <main className="relative z-10">
+      <main
+        className="
+          relative
+          z-10
+          mx-auto
+          max-w-7xl
+          px-6
+          py-10
+          lg:px-10
+          lg:py-14
+        "
+      >
 
-        <section className="mx-auto max-w-7xl px-6 pb-24 pt-20 lg:px-10 lg:pt-28">
+        {/* ===================================================
+            GREETING
+            =================================================== */}
 
-          <div className="grid items-center gap-16 lg:grid-cols-[1.05fr_0.95fr]">
+        <section className="mb-10">
+
+          <div
+            className="
+              font-mono
+              text-[10px]
+              uppercase
+              tracking-[0.2em]
+              text-violet-400
+            "
+          >
+            Candidate workspace
+          </div>
 
 
-            {/* LEFT */}
+          <div
+            className="
+              mt-3
+              flex
+              flex-col
+              justify-between
+              gap-5
+              lg:flex-row
+              lg:items-end
+            "
+          >
 
             <div>
 
-              {/* Status */}
+              <h1
+                className="
+                  font-display
+                  text-4xl
+                  font-semibold
+                  leading-tight
+                  tracking-[-0.035em]
+                  text-white
+                  sm:text-5xl
+                "
+              >
+                Good to see you,{" "}
+                <span
+                  className="
+                    bg-gradient-to-r
+                    from-violet-300
+                    to-cyan-300
+                    bg-clip-text
+                    text-transparent
+                  "
+                >
+                  {firstName}.
+                </span>
+              </h1>
+
+
+              <p
+                className="
+                  mt-4
+                  max-w-2xl
+                  text-base
+                  leading-7
+                  text-slate-500
+                "
+              >
+                Ready for your next challenge?
+                Practice under realistic interview
+                conditions and turn your answers into
+                measurable progress.
+              </p>
+
+            </div>
+
+
+            {/* System status */}
+
+            <div
+              className="
+                flex
+                w-fit
+                items-center
+                gap-2
+                rounded-full
+                border
+                border-emerald-400/10
+                bg-emerald-400/[0.035]
+                px-3
+                py-2
+              "
+            >
+
+              <span
+                className="
+                  h-1.5
+                  w-1.5
+                  rounded-full
+                  bg-emerald-400
+                  shadow-[0_0_10px_rgba(52,211,153,0.8)]
+                "
+              />
+
+              <span
+                className="
+                  font-mono
+                  text-[10px]
+                  uppercase
+                  tracking-[0.14em]
+                  text-emerald-400/80
+                "
+              >
+                Interview engine ready
+              </span>
+
+            </div>
+
+          </div>
+
+        </section>
+
+
+        {/* ===================================================
+            PRIMARY ACTION + PERFORMANCE
+            =================================================== */}
+
+        <section
+          className="
+            grid
+            gap-5
+            lg:grid-cols-[1.4fr_1fr]
+          "
+        >
+
+          {/* Start interview */}
+
+          <div
+            className="
+              group
+              relative
+              overflow-hidden
+              rounded-3xl
+              border
+              border-violet-400/15
+              bg-gradient-to-br
+              from-violet-500/[0.13]
+              via-white/[0.035]
+              to-cyan-400/[0.04]
+              p-8
+              shadow-glow
+              transition-all
+              duration-500
+              hover:border-violet-400/25
+            "
+          >
+
+            {/* Ambient glow */}
+
+            <div
+              className="
+                absolute
+                right-[-100px]
+                top-[-100px]
+                h-72
+                w-72
+                rounded-full
+                bg-violet-500/[0.08]
+                blur-3xl
+                transition-transform
+                duration-700
+                group-hover:scale-125
+              "
+            />
+
+
+            <div className="relative">
 
               <div
                 className="
-                  mb-8
                   inline-flex
                   items-center
                   gap-2
                   rounded-full
                   border
-                  border-white/10
-                  bg-white/[0.035]
-                  px-3.5
-                  py-2
-                  font-mono
-                  text-[11px]
-                  uppercase
-                  tracking-[0.18em]
-                  text-slate-400
+                  border-white/[0.08]
+                  bg-black/10
+                  px-3
+                  py-1.5
                 "
               >
 
@@ -220,149 +583,109 @@ export default function Home() {
                   className="
                     h-1.5
                     w-1.5
-                    animate-pulse
                     rounded-full
-                    bg-emerald-400
-                    shadow-[0_0_10px_rgba(52,211,153,0.8)]
+                    bg-violet-400
+                    shadow-[0_0_10px_rgba(167,139,250,0.8)]
                   "
                 />
 
-                AI interviewer online
+                <span
+                  className="
+                    font-mono
+                    text-[9px]
+                    uppercase
+                    tracking-[0.16em]
+                    text-violet-300/80
+                  "
+                >
+                  New session
+                </span>
 
               </div>
 
 
-              {/* Heading */}
-
-              <h1
+              <h2
                 className="
-                  max-w-4xl
+                  mt-7
+                  max-w-xl
                   font-display
-                  text-5xl
+                  text-3xl
                   font-semibold
-                  leading-[0.98]
-                  tracking-[-0.045em]
+                  leading-tight
+                  tracking-tight
                   text-white
-                  sm:text-6xl
-                  lg:text-7xl
-                  xl:text-[84px]
+                  sm:text-4xl
                 "
               >
+                Put your technical
+                skills under pressure.
+              </h2>
 
-                Practice like
-                <br />
-
-                <span
-                  className="
-                    bg-gradient-to-r
-                    from-violet-300
-                    via-purple-400
-                    to-cyan-300
-                    bg-clip-text
-                    text-transparent
-                  "
-                >
-                  you're already hired.
-                </span>
-
-              </h1>
-
-
-              {/* Description */}
 
               <p
                 className="
-                  mt-8
-                  max-w-xl
-                  text-base
-                  leading-7
+                  mt-4
+                  max-w-lg
+                  text-sm
+                  leading-6
                   text-slate-400
-                  sm:text-lg
                 "
               >
-                A realistic AI-powered interview simulator
-                that adapts to your performance, evaluates
-                every answer, and shows exactly where you
-                can improve.
+                Choose a topic and starting difficulty.
+                The AI interviewer will adapt the
+                conversation based on how you perform.
               </p>
 
 
-              {/* CTA */}
+              <button
+                onClick={() =>
+                  navigate("/interviews/new")
+                }
+                className="
+                  group/button
+                  mt-8
+                  inline-flex
+                  items-center
+                  gap-3
+                  rounded-xl
+                  bg-white
+                  px-6
+                  py-3.5
+                  font-display
+                  text-sm
+                  font-semibold
+                  text-slate-950
+                  transition-all
+                  duration-300
+                  hover:-translate-y-0.5
+                  hover:shadow-[0_15px_45px_rgba(139,92,246,0.25)]
+                  active:translate-y-0
+                "
+              >
 
-              <div className="mt-10 flex flex-wrap items-center gap-4">
+                Start new interview
 
-                <button
-                  onClick={() => navigate("/register")}
+                <span
                   className="
-                    group
-                    relative
-                    overflow-hidden
-                    rounded-xl
-                    bg-white
-                    px-6
-                    py-3.5
-                    font-display
-                    text-sm
-                    font-semibold
-                    text-slate-950
-                    shadow-[0_10px_40px_rgba(255,255,255,0.08)]
-                    hover:-translate-y-0.5
-                    hover:shadow-[0_15px_45px_rgba(139,92,246,0.2)]
+                    transition-transform
+                    duration-300
+                    group-hover/button:translate-x-1
                   "
                 >
+                  →
+                </span>
 
-                  <span className="relative z-10">
-                    Start an interview
-                  </span>
-
-                  <span
-                    className="
-                      absolute
-                      inset-0
-                      -translate-x-full
-                      bg-gradient-to-r
-                      from-violet-200
-                      to-cyan-200
-                      transition-transform
-                      duration-500
-                      group-hover:translate-x-0
-                    "
-                  />
-
-                </button>
+              </button>
 
 
-                <button
-                  onClick={() => navigate("/login")}
-                  className="
-                    rounded-xl
-                    border
-                    border-white/10
-                    bg-white/[0.035]
-                    px-6
-                    py-3.5
-                    font-display
-                    text-sm
-                    font-medium
-                    text-slate-200
-                    hover:border-white/20
-                    hover:bg-white/[0.07]
-                  "
-                >
-                  I already have an account
-                </button>
-
-              </div>
-
-
-              {/* Trust indicators */}
+              {/* Interview metadata */}
 
               <div
                 className="
-                  mt-12
+                  mt-8
                   flex
                   flex-wrap
-                  gap-x-8
+                  gap-x-7
                   gap-y-3
                   border-t
                   border-white/[0.06]
@@ -375,37 +698,16 @@ export default function Home() {
                   <div
                     className="
                       font-mono
-                      text-[10px]
+                      text-[9px]
                       uppercase
-                      tracking-[0.16em]
-                      text-slate-600
-                    "
-                  >
-                    Evaluation
-                  </div>
-
-                  <div className="mt-1 text-sm text-slate-300">
-                    AI-powered
-                  </div>
-
-                </div>
-
-
-                <div>
-
-                  <div
-                    className="
-                      font-mono
-                      text-[10px]
-                      uppercase
-                      tracking-[0.16em]
+                      tracking-[0.15em]
                       text-slate-600
                     "
                   >
                     Difficulty
                   </div>
 
-                  <div className="mt-1 text-sm text-slate-300">
+                  <div className="mt-1 text-xs text-slate-300">
                     Adaptive
                   </div>
 
@@ -417,16 +719,37 @@ export default function Home() {
                   <div
                     className="
                       font-mono
-                      text-[10px]
+                      text-[9px]
                       uppercase
-                      tracking-[0.16em]
+                      tracking-[0.15em]
+                      text-slate-600
+                    "
+                  >
+                    Evaluation
+                  </div>
+
+                  <div className="mt-1 text-xs text-slate-300">
+                    AI-powered
+                  </div>
+
+                </div>
+
+
+                <div>
+
+                  <div
+                    className="
+                      font-mono
+                      text-[9px]
+                      uppercase
+                      tracking-[0.15em]
                       text-slate-600
                     "
                   >
                     Feedback
                   </div>
 
-                  <div className="mt-1 text-sm text-slate-300">
+                  <div className="mt-1 text-xs text-slate-300">
                     Instant
                   </div>
 
@@ -436,280 +759,410 @@ export default function Home() {
 
             </div>
 
+          </div>
 
-            {/* =================================================
-                INTERVIEW SIMULATION CARD
-                ================================================= */}
 
-            <div className="relative">
+          {/* Performance */}
+
+          <div
+            className="
+              glass-panel
+              rounded-3xl
+              p-7
+            "
+          >
+
+            <div
+              className="
+                font-mono
+                text-[10px]
+                uppercase
+                tracking-[0.18em]
+                text-slate-600
+              "
+            >
+              Your performance
+            </div>
+
+
+            <div className="mt-7">
 
               <div
                 className="
-                  absolute
-                  -inset-8
-                  rounded-[40px]
-                  bg-violet-500/[0.06]
-                  blur-3xl
-                "
-              />
-
-
-              <div
-                className="
-                  glass-panel
-                  relative
-                  overflow-hidden
-                  rounded-3xl
+                  font-display
+                  text-5xl
+                  font-semibold
+                  tracking-tight
+                  text-white
                 "
               >
+                —
+              </div>
 
-                {/* Top bar */}
+              <div className="mt-2 text-sm text-slate-500">
+                Average interview score
+              </div>
+
+            </div>
+
+
+            <div className="mt-8 grid grid-cols-2 gap-3">
+
+              <StatCard
+                label="Completed"
+                value="0"
+                description="Finished sessions"
+              />
+
+              <StatCard
+                label="In progress"
+                value="0"
+                description="Active sessions"
+              />
+
+            </div>
+
+          </div>
+
+        </section>
+
+
+        {/* ===================================================
+            QUICK ACTIONS
+            =================================================== */}
+
+        <section className="mt-8">
+
+          <div
+            className="
+              mb-4
+              font-mono
+              text-[10px]
+              uppercase
+              tracking-[0.18em]
+              text-slate-600
+            "
+          >
+            Quick actions
+          </div>
+
+
+          <div className="grid gap-4 sm:grid-cols-2">
+
+            {/* Performance */}
+
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="
+                group
+                rounded-2xl
+                border
+                border-white/[0.06]
+                bg-white/[0.02]
+                p-5
+                text-left
+                transition-all
+                duration-300
+                hover:-translate-y-0.5
+                hover:border-violet-400/20
+                hover:bg-white/[0.035]
+              "
+            >
+
+              <div className="flex items-center justify-between">
 
                 <div
                   className="
                     flex
+                    h-10
+                    w-10
                     items-center
-                    justify-between
-                    border-b
-                    border-white/[0.06]
-                    px-5
-                    py-4
+                    justify-center
+                    rounded-xl
+                    border
+                    border-violet-400/10
+                    bg-violet-500/[0.06]
                   "
                 >
 
-                  <div className="flex items-center gap-2">
-
-                    <span className="h-2 w-2 rounded-full bg-red-400/80" />
-                    <span className="h-2 w-2 rounded-full bg-amber-400/80" />
-                    <span className="h-2 w-2 rounded-full bg-emerald-400/80" />
-
-                  </div>
-
-
-                  <div
-                    className="
-                      font-mono
-                      text-[10px]
-                      uppercase
-                      tracking-[0.2em]
-                      text-slate-600
-                    "
-                  >
-                    Interview / 01
-                  </div>
+                  <span className="font-mono text-xs text-violet-300">
+                    ↗
+                  </span>
 
                 </div>
 
 
-                {/* AI area */}
+                <span
+                  className="
+                    text-slate-700
+                    transition-transform
+                    duration-300
+                    group-hover:translate-x-1
+                  "
+                >
+                  →
+                </span>
 
-                <div className="px-7 pb-8 pt-9">
-
-                  <div className="flex items-start gap-4">
-
-                    {/* Orb */}
-
-                    <div className="relative flex h-14 w-14 shrink-0 items-center justify-center">
-
-                      <div
-                        className="
-                          absolute
-                          inset-0
-                          animate-pulse-slow
-                          rounded-full
-                          bg-violet-500/20
-                          blur-md
-                        "
-                      />
-
-                      <div
-                        className="
-                          relative
-                          flex
-                          h-12
-                          w-12
-                          items-center
-                          justify-center
-                          rounded-full
-                          border
-                          border-violet-400/30
-                          bg-gradient-to-br
-                          from-violet-500/30
-                          to-cyan-400/10
-                        "
-                      >
-
-                        <div className="h-3 w-3 rounded-full bg-violet-300 shadow-[0_0_18px_rgba(196,181,253,0.9)]" />
-
-                      </div>
-
-                    </div>
+              </div>
 
 
-                    <div className="pt-1">
+              <h3 className="mt-5 font-display text-base font-semibold text-white">
+                Performance dashboard
+              </h3>
 
-                      <div
-                        className="
-                          font-mono
-                          text-[10px]
-                          uppercase
-                          tracking-[0.16em]
-                          text-violet-300
-                        "
-                      >
-                        AI interviewer
-                      </div>
+              <p className="mt-2 text-xs leading-5 text-slate-600">
+                Review your scores, progress, and
+                interview history.
+              </p>
 
-                      <div className="mt-1 text-xs text-slate-600">
-                        Asking your next question
-                      </div>
-
-                    </div>
-
-                  </div>
+            </button>
 
 
-                  {/* Question */}
+            {/* Profile */}
+
+            <button
+              className="
+                group
+                rounded-2xl
+                border
+                border-white/[0.06]
+                bg-white/[0.02]
+                p-5
+                text-left
+                transition-all
+                duration-300
+                hover:-translate-y-0.5
+                hover:border-cyan-400/20
+                hover:bg-white/[0.035]
+              "
+            >
+
+              <div className="flex items-center justify-between">
+
+                <div
+                  className="
+                    flex
+                    h-10
+                    w-10
+                    items-center
+                    justify-center
+                    rounded-xl
+                    border
+                    border-cyan-400/10
+                    bg-cyan-400/[0.05]
+                  "
+                >
+
+                  <span className="font-mono text-xs text-cyan-300">
+                    ID
+                  </span>
+
+                </div>
+
+
+                <span
+                  className="
+                    text-slate-700
+                    transition-transform
+                    duration-300
+                    group-hover:translate-x-1
+                  "
+                >
+                  →
+                </span>
+
+              </div>
+
+
+              <h3 className="mt-5 font-display text-base font-semibold text-white">
+                Your profile
+              </h3>
+
+              <p className="mt-2 text-xs leading-5 text-slate-600">
+                Manage your account information and
+                preferences.
+              </p>
+
+            </button>
+
+          </div>
+
+        </section>
+
+
+        {/* ===================================================
+            INTERVIEW HISTORY
+            =================================================== */}
+
+        <section className="mt-8">
+
+          <div
+            className="
+              glass-panel
+              overflow-hidden
+              rounded-3xl
+            "
+          >
+
+            {/* Header */}
+
+            <div
+              className="
+                flex
+                flex-col
+                gap-4
+                border-b
+                border-white/[0.06]
+                p-7
+                sm:flex-row
+                sm:items-center
+                sm:justify-between
+              "
+            >
+
+              <div>
+
+                <div
+                  className="
+                    font-mono
+                    text-[10px]
+                    uppercase
+                    tracking-[0.18em]
+                    text-violet-400
+                  "
+                >
+                  Interview history
+                </div>
+
+                <h2
+                  className="
+                    mt-2
+                    font-display
+                    text-xl
+                    font-semibold
+                    text-white
+                  "
+                >
+                  Recent interviews
+                </h2>
+
+              </div>
+
+
+              <div
+                className="
+                  font-mono
+                  text-[10px]
+                  uppercase
+                  tracking-[0.15em]
+                  text-slate-700
+                "
+              >
+                0 sessions
+              </div>
+
+            </div>
+
+
+            {/* Empty state */}
+
+            <div className="p-7">
+
+              <div
+                className="
+                  flex
+                  min-h-56
+                  items-center
+                  justify-center
+                  rounded-2xl
+                  border
+                  border-dashed
+                  border-white/[0.08]
+                  bg-white/[0.012]
+                "
+              >
+
+                <div className="max-w-sm text-center">
 
                   <div
                     className="
-                      mt-8
+                      mx-auto
+                      flex
+                      h-14
+                      w-14
+                      items-center
+                      justify-center
                       rounded-2xl
                       border
                       border-white/[0.07]
-                      bg-black/20
-                      p-6
+                      bg-white/[0.025]
                     "
                   >
 
-                    <div
+                    <span
                       className="
                         font-mono
-                        text-[10px]
-                        uppercase
-                        tracking-[0.15em]
+                        text-xs
+                        tracking-widest
                         text-slate-600
                       "
                     >
-                      Question 03 / 10
-                    </div>
-
-                    <p
-                      className="
-                        mt-4
-                        font-display
-                        text-xl
-                        leading-8
-                        text-slate-100
-                      "
-                    >
-                      How would you design a
-                      scalable API for a system
-                      handling millions of requests?
-                    </p>
+                      01
+                    </span>
 
                   </div>
 
 
-                  {/* Waveform */}
-
-                  <div className="mt-7">
-
-                    <div
-                      className="
-                        mb-3
-                        flex
-                        items-center
-                        justify-between
-                      "
-                    >
-
-                      <span
-                        className="
-                          font-mono
-                          text-[10px]
-                          uppercase
-                          tracking-[0.15em]
-                          text-slate-600
-                        "
-                      >
-                        Listening
-                      </span>
-
-                      <span className="text-xs text-emerald-400">
-                        Your turn
-                      </span>
-
-                    </div>
+                  <h3
+                    className="
+                      mt-5
+                      font-display
+                      text-base
+                      font-semibold
+                      text-slate-300
+                    "
+                  >
+                    Your interview history is empty.
+                  </h3>
 
 
-                    <div className="flex h-12 items-center justify-center gap-1">
-
-                      {[18, 30, 42, 25, 36, 52, 28, 44, 32, 20, 39, 48, 27, 36, 22, 43, 31, 18].map(
-                        (height, index) => (
-                          <div
-                            key={index}
-                            className="
-                              w-1
-                              rounded-full
-                              bg-gradient-to-t
-                              from-violet-500
-                              to-cyan-300
-                              opacity-80
-                            "
-                            style={{
-                              height: `${height}%`,
-                            }}
-                          />
-                        )
-                      )}
-
-                    </div>
-
-                  </div>
+                  <p
+                    className="
+                      mt-2
+                      text-xs
+                      leading-5
+                      text-slate-600
+                    "
+                  >
+                    Complete your first interview to
+                    start tracking your technical
+                    performance and growth.
+                  </p>
 
 
-                  {/* Progress */}
-
-                  <div className="mt-8">
-
-                    <div className="mb-2 flex justify-between">
-
-                      <span
-                        className="
-                          font-mono
-                          text-[10px]
-                          uppercase
-                          tracking-[0.15em]
-                          text-slate-600
-                        "
-                      >
-                        Session progress
-                      </span>
-
-                      <span className="font-mono text-xs text-slate-400">
-                        30%
-                      </span>
-
-                    </div>
-
-
-                    <div className="h-1 overflow-hidden rounded-full bg-white/[0.06]">
-
-                      <div
-                        className="
-                          h-full
-                          w-[30%]
-                          rounded-full
-                          bg-gradient-to-r
-                          from-violet-500
-                          to-cyan-400
-                        "
-                      />
-
-                    </div>
-
-                  </div>
+                  <button
+                    onClick={() =>
+                      navigate("/interviews/new")
+                    }
+                    className="
+                      mt-5
+                      rounded-lg
+                      border
+                      border-violet-400/20
+                      bg-violet-500/[0.07]
+                      px-4
+                      py-2.5
+                      font-mono
+                      text-[10px]
+                      uppercase
+                      tracking-[0.12em]
+                      text-violet-300
+                      transition
+                      hover:bg-violet-500/[0.12]
+                    "
+                  >
+                    Start your first interview
+                  </button>
 
                 </div>
 
@@ -723,124 +1176,56 @@ export default function Home() {
 
 
         {/* ===================================================
-            FEATURES
+            FOOTER
             =================================================== */}
 
-        <section className="mx-auto max-w-7xl px-6 pb-24 lg:px-10">
+        <footer
+          className="
+            mt-12
+            border-t
+            border-white/[0.05]
+            py-7
+          "
+        >
 
-          <div className="mb-10 flex items-end justify-between">
+          <div
+            className="
+              flex
+              flex-col
+              gap-2
+              sm:flex-row
+              sm:items-center
+              sm:justify-between
+            "
+          >
 
-            <div>
+            <div
+              className="
+                font-mono
+                text-[9px]
+                uppercase
+                tracking-[0.15em]
+                text-slate-700
+              "
+            >
+              © 2026 AI Mock Interview
+            </div>
 
-              <div
-                className="
-                  font-mono
-                  text-[10px]
-                  uppercase
-                  tracking-[0.2em]
-                  text-violet-400
-                "
-              >
-                System capabilities
-              </div>
-
-              <h2
-                className="
-                  mt-3
-                  font-display
-                  text-3xl
-                  font-semibold
-                  tracking-tight
-                  text-white
-                "
-              >
-                More than a question generator.
-              </h2>
-
+            <div
+              className="
+                font-mono
+                text-[9px]
+                uppercase
+                tracking-[0.15em]
+                text-slate-700
+              "
+            >
+              Intelligent practice · Better interviews
             </div>
 
           </div>
 
-
-          <div className="grid gap-4 md:grid-cols-3">
-
-            {[
-              {
-                number: "01",
-                title: "Adaptive difficulty",
-                description:
-                  "Your performance determines what comes next. Strong answers push the interview forward.",
-              },
-              {
-                number: "02",
-                title: "AI evaluation",
-                description:
-                  "Every response is evaluated across technical accuracy, relevance, communication, and quality.",
-              },
-              {
-                number: "03",
-                title: "Actionable feedback",
-                description:
-                  "Finish with a structured report showing strengths, weaknesses, and where to improve.",
-              },
-            ].map((feature) => (
-
-              <div
-                key={feature.number}
-                className="
-                  glass-panel
-                  group
-                  rounded-2xl
-                  p-6
-                  transition-all
-                  duration-300
-                  hover:-translate-y-1
-                  hover:border-violet-400/20
-                  hover:shadow-glow
-                "
-              >
-
-                <div
-                  className="
-                    font-mono
-                    text-[10px]
-                    tracking-[0.18em]
-                    text-slate-600
-                  "
-                >
-                  {feature.number}
-                </div>
-
-                <h3
-                  className="
-                    mt-8
-                    font-display
-                    text-lg
-                    font-semibold
-                    text-white
-                  "
-                >
-                  {feature.title}
-                </h3>
-
-                <p
-                  className="
-                    mt-3
-                    text-sm
-                    leading-6
-                    text-slate-500
-                  "
-                >
-                  {feature.description}
-                </p>
-
-              </div>
-
-            ))}
-
-          </div>
-
-        </section>
+        </footer>
 
       </main>
 
