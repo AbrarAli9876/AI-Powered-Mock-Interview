@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Boolean, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.models.mixins import TimestampMixin
+
+
+if TYPE_CHECKING:
+    from app.models.coding_question import CodingQuestion
+    from app.models.interview_session import InterviewSession
+    from app.models.question import Question
 
 
 class Topic(TimestampMixin, Base):
@@ -39,6 +47,11 @@ class Topic(TimestampMixin, Base):
 
     questions: Mapped[list["Question"]] = relationship(
         "Question",
+        back_populates="topic",
+    )
+
+    coding_questions: Mapped[list["CodingQuestion"]] = relationship(
+        "CodingQuestion",
         back_populates="topic",
     )
 

@@ -69,34 +69,51 @@ function StatCard({
 export default function Home() {
   const navigate = useNavigate();
 
-  const [user, setUser] = useState<CurrentUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] =
+    useState<CurrentUser | null>(null);
+
+  const [isLoading, setIsLoading] =
+    useState(true);
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("access_token");
-    const storedUser = localStorage.getItem("user");
+    const storedToken =
+      localStorage.getItem("access_token");
+
+    const storedUser =
+      localStorage.getItem("user");
 
     if (!storedToken || !storedUser) {
-      navigate("/login", { replace: true });
+      navigate("/login", {
+        replace: true,
+      });
+
       return;
     }
 
     try {
-      const parsedUser: CurrentUser = JSON.parse(
-        storedUser
-      );
+      const parsedUser: CurrentUser =
+        JSON.parse(storedUser);
 
       if (parsedUser.role === "admin") {
-        navigate("/admin", { replace: true });
+        navigate("/admin", {
+          replace: true,
+        });
+
         return;
       }
 
       setUser(parsedUser);
     } catch {
-      localStorage.removeItem("access_token");
+      localStorage.removeItem(
+        "access_token",
+      );
+
       localStorage.removeItem("user");
 
-      navigate("/login", { replace: true });
+      navigate("/login", {
+        replace: true,
+      });
+
       return;
     }
 
@@ -104,7 +121,10 @@ export default function Home() {
   }, [navigate]);
 
   const handleLogout = () => {
-    localStorage.removeItem("access_token");
+    localStorage.removeItem(
+      "access_token",
+    );
+
     localStorage.removeItem("user");
 
     navigate("/login", {
@@ -123,8 +143,9 @@ export default function Home() {
           justify-center
         "
       >
-        <div className="text-center">
+        <div className="app-grid" />
 
+        <div className="text-center">
           <div
             className="
               mx-auto
@@ -150,7 +171,6 @@ export default function Home() {
           >
             Loading workspace
           </p>
-
         </div>
       </div>
     );
@@ -168,7 +188,7 @@ export default function Home() {
 
       {/* =====================================================
           AMBIENT BACKGROUND
-          ===================================================== */}
+      ===================================================== */}
 
       <div className="app-grid" />
 
@@ -195,7 +215,7 @@ export default function Home() {
 
       {/* =====================================================
           NAVIGATION
-          ===================================================== */}
+      ===================================================== */}
 
       <header
         className="
@@ -206,7 +226,6 @@ export default function Home() {
           bg-black/10
         "
       >
-
         <div
           className="
             mx-auto
@@ -223,7 +242,9 @@ export default function Home() {
           {/* Brand */}
 
           <button
-            onClick={() => navigate("/home")}
+            onClick={() =>
+              navigate("/home")
+            }
             className="
               flex
               items-center
@@ -232,7 +253,6 @@ export default function Home() {
             "
             aria-label="Go to home"
           >
-
             <div
               className="
                 relative
@@ -249,7 +269,6 @@ export default function Home() {
                 shadow-glow
               "
             >
-
               <div
                 className="
                   absolute
@@ -271,12 +290,9 @@ export default function Home() {
               >
                 AI
               </span>
-
             </div>
 
-
             <div>
-
               <div
                 className="
                   font-display
@@ -300,9 +316,7 @@ export default function Home() {
               >
                 Candidate workspace
               </div>
-
             </div>
-
           </button>
 
 
@@ -311,7 +325,6 @@ export default function Home() {
           <div className="flex items-center gap-4">
 
             <div className="hidden text-right sm:block">
-
               <div className="text-sm font-medium text-slate-200">
                 {user.full_name}
               </div>
@@ -327,9 +340,7 @@ export default function Home() {
               >
                 Candidate
               </div>
-
             </div>
-
 
             <div
               className="
@@ -340,7 +351,6 @@ export default function Home() {
                 sm:block
               "
             />
-
 
             <button
               onClick={handleLogout}
@@ -364,15 +374,13 @@ export default function Home() {
             </button>
 
           </div>
-
         </div>
-
       </header>
 
 
       {/* =====================================================
           MAIN CONTENT
-          ===================================================== */}
+      ===================================================== */}
 
       <main
         className="
@@ -389,7 +397,7 @@ export default function Home() {
 
         {/* ===================================================
             GREETING
-            =================================================== */}
+        =================================================== */}
 
         <section className="mb-10">
 
@@ -404,7 +412,6 @@ export default function Home() {
           >
             Candidate workspace
           </div>
-
 
           <div
             className="
@@ -445,7 +452,6 @@ export default function Home() {
                 </span>
               </h1>
 
-
               <p
                 className="
                   mt-4
@@ -480,7 +486,6 @@ export default function Home() {
                 py-2
               "
             >
-
               <span
                 className="
                   h-1.5
@@ -502,17 +507,15 @@ export default function Home() {
               >
                 Interview engine ready
               </span>
-
             </div>
 
           </div>
-
         </section>
 
 
         {/* ===================================================
             PRIMARY ACTION + PERFORMANCE
-            =================================================== */}
+        =================================================== */}
 
         <section
           className="
@@ -561,7 +564,6 @@ export default function Home() {
                 group-hover:scale-125
               "
             />
-
 
             <div className="relative">
 
@@ -662,7 +664,6 @@ export default function Home() {
                   active:translate-y-0
                 "
               >
-
                 Start new interview
 
                 <span
@@ -674,7 +675,6 @@ export default function Home() {
                 >
                   →
                 </span>
-
               </button>
 
 
@@ -694,7 +694,6 @@ export default function Home() {
               >
 
                 <div>
-
                   <div
                     className="
                       font-mono
@@ -710,12 +709,10 @@ export default function Home() {
                   <div className="mt-1 text-xs text-slate-300">
                     Adaptive
                   </div>
-
                 </div>
 
 
                 <div>
-
                   <div
                     className="
                       font-mono
@@ -731,12 +728,10 @@ export default function Home() {
                   <div className="mt-1 text-xs text-slate-300">
                     AI-powered
                   </div>
-
                 </div>
 
 
                 <div>
-
                   <div
                     className="
                       font-mono
@@ -752,7 +747,6 @@ export default function Home() {
                   <div className="mt-1 text-xs text-slate-300">
                     Instant
                   </div>
-
                 </div>
 
               </div>
@@ -829,7 +823,7 @@ export default function Home() {
 
         {/* ===================================================
             QUICK ACTIONS
-            =================================================== */}
+        =================================================== */}
 
         <section className="mt-8">
 
@@ -847,12 +841,14 @@ export default function Home() {
           </div>
 
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 
             {/* Performance */}
 
             <button
-              onClick={() => navigate("/dashboard")}
+              onClick={() =>
+                navigate("/dashboard")
+              }
               className="
                 group
                 rounded-2xl
@@ -884,11 +880,9 @@ export default function Home() {
                     bg-violet-500/[0.06]
                   "
                 >
-
                   <span className="font-mono text-xs text-violet-300">
                     ↗
                   </span>
-
                 </div>
 
 
@@ -918,9 +912,12 @@ export default function Home() {
             </button>
 
 
-            {/* Profile */}
+            {/* Coding Interview */}
 
             <button
+              onClick={() =>
+                navigate("/coding-interview/new")
+              }
               className="
                 group
                 rounded-2xl
@@ -952,11 +949,78 @@ export default function Home() {
                     bg-cyan-400/[0.05]
                   "
                 >
+                  <span className="font-mono text-xs text-cyan-300">
+                    {"</>"}
+                  </span>
+                </div>
 
+
+                <span
+                  className="
+                    text-slate-700
+                    transition-transform
+                    duration-300
+                    group-hover:translate-x-1
+                  "
+                >
+                  →
+                </span>
+
+              </div>
+
+
+              <h3 className="mt-5 font-display text-base font-semibold text-white">
+                Coding interview
+              </h3>
+
+              <p className="mt-2 text-xs leading-5 text-slate-600">
+                Solve coding problems, run your code,
+                and test your solutions.
+              </p>
+
+            </button>
+
+
+            {/* Profile */}
+
+            <button
+              onClick={() =>
+                navigate("/profile")
+              }
+              className="
+                group
+                rounded-2xl
+                border
+                border-white/[0.06]
+                bg-white/[0.02]
+                p-5
+                text-left
+                transition-all
+                duration-300
+                hover:-translate-y-0.5
+                hover:border-cyan-400/20
+                hover:bg-white/[0.035]
+              "
+            >
+
+              <div className="flex items-center justify-between">
+
+                <div
+                  className="
+                    flex
+                    h-10
+                    w-10
+                    items-center
+                    justify-center
+                    rounded-xl
+                    border
+                    border-cyan-400/10
+                    bg-cyan-400/[0.05]
+                  "
+                >
                   <span className="font-mono text-xs text-cyan-300">
                     ID
                   </span>
-
                 </div>
 
 
@@ -992,7 +1056,7 @@ export default function Home() {
 
         {/* ===================================================
             INTERVIEW HISTORY
-            =================================================== */}
+        =================================================== */}
 
         <section className="mt-8">
 
@@ -1177,7 +1241,7 @@ export default function Home() {
 
         {/* ===================================================
             FOOTER
-            =================================================== */}
+        =================================================== */}
 
         <footer
           className="

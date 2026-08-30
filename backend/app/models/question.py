@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Enum, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.enums.question_difficulty import QuestionDifficulty
 from app.models.base import Base
 from app.models.mixins import TimestampMixin
+
+
+if TYPE_CHECKING:
+    from app.models.interview_answer import InterviewAnswer
+    from app.models.topic import Topic
 
 
 class Question(TimestampMixin, Base):
@@ -30,7 +37,8 @@ class Question(TimestampMixin, Base):
         Enum(
             QuestionDifficulty,
             values_callable=lambda enum_cls: [
-                member.value for member in enum_cls
+                member.value
+                for member in enum_cls
             ],
             native_enum=False,
             length=20,
