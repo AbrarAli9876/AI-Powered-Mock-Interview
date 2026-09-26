@@ -99,6 +99,24 @@ class CodingQuestion(TimestampMixin, Base):
         nullable=False,
     )
 
+    # =========================================================
+    # HINTS
+    # =========================================================
+
+    hint_1: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    hint_2: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    # =========================================================
+    # RELATIONSHIPS
+    # =========================================================
+
     topic: Mapped["Topic"] = relationship(
         "Topic",
         back_populates="coding_questions",

@@ -27,6 +27,10 @@ router = APIRouter(
 )
 
 
+# =========================================================
+# RUN CODE
+# =========================================================
+
 @router.post(
     "/run",
     response_model=CodeExecutionResponse,
@@ -37,12 +41,11 @@ def run_code(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Execute candidate code against coding test cases.
+    Execute candidate code against the test cases
+    configured for a coding question.
     """
 
-    question_service = (
-        CodingQuestionService(db)
-    )
+    question_service = CodingQuestionService(db)
 
     question = (
         question_service.get_question_by_id(
@@ -56,9 +59,9 @@ def run_code(
             detail="Coding question not found.",
         )
 
-    execution_service = (
-        CodeExecutionService()
-    )
+
+    execution_service = CodeExecutionService()
+
 
     try:
         return execution_service.execute(
@@ -66,14 +69,26 @@ def run_code(
             code=execution_data.code,
         )
 
+
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         )
 
+
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
+        )
+
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "An unexpected error occurred "
+                "while executing the code."
+            ),
         )

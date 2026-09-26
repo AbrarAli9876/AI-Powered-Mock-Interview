@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -15,23 +17,22 @@ from app.schemas.code_execution import (
 
 class CodeExecutionService:
     """
-    Executes candidate code inside an isolated Docker container.
+    Executes candidate coding solutions locally using subprocess.
+
+    Docker is intentionally not used.
+
+    The candidate code is written to a temporary file and executed
+    using the Python interpreter from the currently active environment.
     """
 
     TIMEOUT_SECONDS = 5
 
-    MEMORY_LIMIT = "128m"
-
-    CPU_LIMIT = "0.5"
+    MAX_OUTPUT_LENGTH = 10000
 
     LANGUAGE_CONFIG = {
         CodingLanguage.PYTHON: {
-            "image": "python:3.12-slim",
             "filename": "main.py",
-            "command": [
-                "python",
-                "/code/main.py",
-            ],
+            "command": [sys.executable],
         },
     }
 
@@ -41,7 +42,7 @@ class CodeExecutionService:
         code: str,
     ) -> CodeExecutionResponse:
         """
-        Execute candidate code against all test cases.
+        Execute candidate code against all configured test cases.
         """
 
         language = question.language
@@ -54,6 +55,11 @@ class CodeExecutionService:
 
         config = self.LANGUAGE_CONFIG[language]
 
+        if not code or not code.strip():
+            raise ValueError(
+                "Code cannot be empty."
+            )
+
         if not question.test_cases:
             raise ValueError(
                 "No test cases are configured "
@@ -64,25 +70,32 @@ class CodeExecutionService:
 
         passed_count = 0
 
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(
+            prefix="ai_mock_interview_"
+        ) as temp_dir:
 
             temp_path = Path(temp_dir)
 
             source_file = (
-                temp_path /
-                config["filename"]
+                temp_path / config["filename"]
             )
 
-            source_file.write_text(
-                code,
-                encoding="utf-8",
-            )
+            try:
+                source_file.write_text(
+                    code,
+                    encoding="utf-8",
+                )
+
+            except OSError as exc:
+                raise RuntimeError(
+                    "Unable to create the temporary "
+                    f"source file: {exc}"
+                ) from exc
 
             for index, test_case in enumerate(
                 question.test_cases,
                 start=1,
             ):
-
                 result = self._run_test_case(
                     source_file=source_file,
                     input_data=test_case.input_data,
@@ -91,6 +104,7 @@ class CodeExecutionService:
                     ),
                     index=index,
                     config=config,
+                    working_directory=temp_path,
                 )
 
                 results.append(result)
@@ -101,7 +115,10 @@ class CodeExecutionService:
         total = len(results)
 
         return CodeExecutionResponse(
-            success=passed_count == total,
+            success=(
+                total > 0
+                and passed_count == total
+            ),
             language=language.value,
             total_test_cases=total,
             passed_test_cases=passed_count,
@@ -111,7 +128,6 @@ class CodeExecutionService:
             results=results,
         )
 
-
     def _run_test_case(
         self,
         source_file: Path,
@@ -119,44 +135,20 @@ class CodeExecutionService:
         expected_output: str,
         index: int,
         config: dict,
+        working_directory: Path,
     ) -> TestCaseResult:
         """
-        Run one test case inside Docker.
+        Execute one test case using a local subprocess.
         """
 
         command = [
-            "docker",
-            "run",
-            "--rm",
-
-            "--network",
-            "none",
-
-            "--memory",
-            self.MEMORY_LIMIT,
-
-            "--cpus",
-            self.CPU_LIMIT,
-
-            "--pids-limit",
-            "64",
-
-            "--read-only",
-
-            "--tmpfs",
-            "/tmp:rw,noexec,nosuid,size=16m",
-
-            "-v",
-            f"{source_file.parent}:/code:ro",
-
-            config["image"],
+            *config["command"],
+            str(source_file),
         ]
 
-        command.extend(
-            config["command"]
-        )
-
         start_time = time.perf_counter()
+
+        environment = self._build_environment()
 
         try:
             process = subprocess.run(
@@ -165,6 +157,8 @@ class CodeExecutionService:
                 text=True,
                 capture_output=True,
                 timeout=self.TIMEOUT_SECONDS,
+                cwd=str(working_directory),
+                env=environment,
                 check=False,
             )
 
@@ -174,16 +168,20 @@ class CodeExecutionService:
             ) * 1000
 
             actual_output = (
-                process.stdout.strip()
-            )
+                process.stdout or ""
+            ).strip()
 
             expected = (
-                expected_output.strip()
-            )
+                expected_output or ""
+            ).strip()
+
+            stderr_output = (
+                process.stderr or ""
+            ).strip()
 
             if process.returncode != 0:
                 error = (
-                    process.stderr.strip()
+                    stderr_output
                     or "Code execution failed."
                 )
 
@@ -193,7 +191,9 @@ class CodeExecutionService:
                     input_data=input_data,
                     expected_output=expected,
                     actual_output=actual_output,
-                    error=error,
+                    error=(
+                        self._limit_output(error)
+                    ),
                     execution_time_ms=(
                         execution_time_ms
                     ),
@@ -208,11 +208,18 @@ class CodeExecutionService:
                 passed=passed,
                 input_data=input_data,
                 expected_output=expected,
-                actual_output=actual_output,
+                actual_output=(
+                    self._limit_output(
+                        actual_output
+                    )
+                ),
                 error=(
                     None
                     if passed
-                    else "Output does not match expected output."
+                    else (
+                        "Output does not match "
+                        "expected output."
+                    )
                 ),
                 execution_time_ms=(
                     execution_time_ms
@@ -220,6 +227,10 @@ class CodeExecutionService:
             )
 
         except subprocess.TimeoutExpired:
+            execution_time_ms = (
+                time.perf_counter()
+                - start_time
+            ) * 1000
 
             return TestCaseResult(
                 test_case_number=index,
@@ -227,19 +238,69 @@ class CodeExecutionService:
                 input_data=input_data,
                 expected_output=(
                     expected_output.strip()
+                    if expected_output
+                    else ""
                 ),
                 actual_output="",
                 error=(
-                    "Execution timed out."
+                    f"Execution timed out after "
+                    f"{self.TIMEOUT_SECONDS} seconds."
                 ),
                 execution_time_ms=(
-                    self.TIMEOUT_SECONDS * 1000
+                    execution_time_ms
                 ),
             )
 
-        except FileNotFoundError:
-
+        except FileNotFoundError as exc:
             raise RuntimeError(
-                "Docker is not installed or "
-                "is not available in PATH."
-            )
+                "Python executable could not be found."
+            ) from exc
+
+        except PermissionError as exc:
+            raise RuntimeError(
+                "Permission denied while "
+                "executing the candidate code."
+            ) from exc
+
+        except OSError as exc:
+            raise RuntimeError(
+                f"Unable to execute candidate code: {exc}"
+            ) from exc
+
+    @staticmethod
+    def _build_environment() -> dict[str, str]:
+        """
+        Build a controlled environment for candidate execution.
+
+        The candidate program receives a minimal environment instead
+        of inheriting the complete backend environment.
+        """
+
+        environment = {
+            "PATH": os.environ.get(
+                "PATH",
+                "",
+            ),
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUTF8": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
+
+        return environment
+
+    def _limit_output(
+        self,
+        output: str,
+    ) -> str:
+        """
+        Prevent extremely large program output from
+        being returned to the frontend.
+        """
+
+        if len(output) <= self.MAX_OUTPUT_LENGTH:
+            return output
+
+        return (
+            output[: self.MAX_OUTPUT_LENGTH]
+            + "\n\n[Output truncated.]"
+        )

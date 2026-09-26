@@ -55,6 +55,16 @@ class CodingQuestionCreate(BaseModel):
         min_length=1,
     )
 
+    hint_1: str = Field(
+        ...,
+        min_length=1,
+    )
+
+    hint_2: str = Field(
+        ...,
+        min_length=1,
+    )
+
 
 class CodingQuestionBulkCreate(BaseModel):
     """
@@ -117,6 +127,16 @@ class CodingQuestionUpdate(BaseModel):
         min_length=1,
     )
 
+    hint_1: str | None = Field(
+        default=None,
+        min_length=1,
+    )
+
+    hint_2: str | None = Field(
+        default=None,
+        min_length=1,
+    )
+
 
 class CodingQuestionResponse(BaseModel):
     """
@@ -128,6 +148,7 @@ class CodingQuestionResponse(BaseModel):
     )
 
     id: int
+
     topic_id: int
 
     language: CodingLanguage
@@ -135,14 +156,23 @@ class CodingQuestionResponse(BaseModel):
     difficulty: QuestionDifficulty
 
     title: str
+
     problem_statement: str
 
     input_format: str
+
     output_format: str
 
     constraints: str
+
     examples: str
+
     starter_code: str
 
+    hint_1: str
+
+    hint_2: str
+
     created_at: datetime
+
     updated_at: datetime

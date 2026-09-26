@@ -19,6 +19,9 @@ class CodingQuestionService:
     def __init__(self, db: Session):
         self.db = db
 
+    # =========================================================
+    # CREATE QUESTION
+    # =========================================================
 
     def create_question(
         self,
@@ -55,6 +58,13 @@ class CodingQuestionService:
             constraints=question_data.constraints,
             examples=question_data.examples,
             starter_code=question_data.starter_code,
+
+            # =================================================
+            # HINTS
+            # =================================================
+
+            hint_1=question_data.hint_1,
+            hint_2=question_data.hint_2,
         )
 
         self.db.add(question)
@@ -63,6 +73,9 @@ class CodingQuestionService:
 
         return question
 
+    # =========================================================
+    # BULK CREATE QUESTIONS
+    # =========================================================
 
     def create_questions_bulk(
         self,
@@ -123,6 +136,13 @@ class CodingQuestionService:
                 constraints=question.constraints,
                 examples=question.examples,
                 starter_code=question.starter_code,
+
+                # =============================================
+                # HINTS
+                # =============================================
+
+                hint_1=question.hint_1,
+                hint_2=question.hint_2,
             )
             for question in bulk_data.questions
         ]
@@ -140,6 +160,9 @@ class CodingQuestionService:
 
         return questions
 
+    # =========================================================
+    # GET QUESTIONS
+    # =========================================================
 
     def get_questions(
         self,
@@ -174,6 +197,9 @@ class CodingQuestionService:
             .all()
         )
 
+    # =========================================================
+    # GET QUESTION BY ID
+    # =========================================================
 
     def get_question_by_id(
         self,
@@ -191,6 +217,9 @@ class CodingQuestionService:
             .first()
         )
 
+    # =========================================================
+    # UPDATE QUESTION
+    # =========================================================
 
     def update_question(
         self,
@@ -209,6 +238,10 @@ class CodingQuestionService:
             raise ValueError(
                 "Coding question not found."
             )
+
+        # =====================================================
+        # TOPIC
+        # =====================================================
 
         if question_data.topic_id is not None:
 
@@ -230,18 +263,32 @@ class CodingQuestionService:
                 question_data.topic_id
             )
 
+        # =====================================================
+        # LANGUAGE
+        # =====================================================
+
         if question_data.language is not None:
             question.language = (
                 question_data.language
             )
+
+        # =====================================================
+        # DIFFICULTY
+        # =====================================================
 
         if question_data.difficulty is not None:
             question.difficulty = (
                 question_data.difficulty
             )
 
+        # =====================================================
+        # BASIC QUESTION INFORMATION
+        # =====================================================
+
         if question_data.title is not None:
-            question.title = question_data.title
+            question.title = (
+                question_data.title
+            )
 
         if question_data.problem_statement is not None:
             question.problem_statement = (
@@ -273,11 +320,28 @@ class CodingQuestionService:
                 question_data.starter_code
             )
 
+        # =====================================================
+        # HINTS
+        # =====================================================
+
+        if question_data.hint_1 is not None:
+            question.hint_1 = (
+                question_data.hint_1
+            )
+
+        if question_data.hint_2 is not None:
+            question.hint_2 = (
+                question_data.hint_2
+            )
+
         self.db.commit()
         self.db.refresh(question)
 
         return question
 
+    # =========================================================
+    # DELETE QUESTION
+    # =========================================================
 
     def delete_question(
         self,

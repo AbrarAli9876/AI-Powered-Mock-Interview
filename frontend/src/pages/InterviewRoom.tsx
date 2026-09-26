@@ -830,6 +830,85 @@ const terminateForSecurityViolation = useCallback(
   isSecurityTerminated,
   terminateForSecurityViolation,
 ]);
+
+  /*
+   * ---------------------------------------------------------
+   * Anti-cheating: block clipboard and context-menu actions.
+   * This applies only to the normal interview room.
+   * ---------------------------------------------------------
+   */
+
+  useEffect(() => {
+    if (
+      !interview ||
+      interview.status !== "in_progress" ||
+      !securityActiveRef.current ||
+      isSecurityTerminated
+    ) {
+      return;
+    }
+
+    const handleClipboard = (event: ClipboardEvent) => {
+      event.preventDefault();
+    };
+
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+
+    document.addEventListener("copy", handleClipboard);
+    document.addEventListener("cut", handleClipboard);
+    document.addEventListener("paste", handleClipboard);
+    document.addEventListener("contextmenu", handleContextMenu);
+
+    return () => {
+      document.removeEventListener("copy", handleClipboard);
+      document.removeEventListener("cut", handleClipboard);
+      document.removeEventListener("paste", handleClipboard);
+      document.removeEventListener("contextmenu", handleContextMenu);
+    };
+  }, [
+    interview,
+    isSecurityTerminated,
+  ]);
+
+  /*
+   * ---------------------------------------------------------
+   * Anti-cheating: detect when the candidate leaves the
+   * interview window/application.
+   * ---------------------------------------------------------
+   */
+
+  useEffect(() => {
+    if (
+      !interview ||
+      interview.status !== "in_progress" ||
+      isSecurityTerminated
+    ) {
+      return;
+    }
+
+    const handleWindowBlur = () => {
+      if (!securityActiveRef.current) {
+        return;
+      }
+
+      void terminateForSecurityViolation(
+        "The interview was ended because you left the interview window or switched to another application."
+      );
+    };
+
+    window.addEventListener("blur", handleWindowBlur);
+
+    return () => {
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+  }, [
+    interview,
+    isSecurityTerminated,
+    terminateForSecurityViolation,
+  ]);
+
   /*
    * ---------------------------------------------------------
    * Keyboard shortcut:

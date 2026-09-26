@@ -21,6 +21,10 @@ router = APIRouter(
 )
 
 
+# =========================================================
+# CREATE CODING QUESTION
+# =========================================================
+
 @router.post(
     "",
     response_model=CodingQuestionResponse,
@@ -44,6 +48,10 @@ def create_question(
             detail=str(exc),
         )
 
+
+# =========================================================
+# CREATE CODING QUESTIONS IN BULK
+# =========================================================
 
 @router.post(
     "/bulk",
@@ -69,12 +77,22 @@ def create_questions_bulk(
         )
 
 
+# =========================================================
+# GET CODING QUESTIONS
+# =========================================================
+#
+# Expected request:
+#
+# /coding-questions?language=python&difficulty=easy
+#
+# Topic selection is intentionally not required.
+# =========================================================
+
 @router.get(
     "",
     response_model=list[CodingQuestionResponse],
 )
 def get_questions(
-    topic_id: int | None = None,
     language: str | None = None,
     difficulty: str | None = None,
     db: Session = Depends(get_db),
@@ -84,7 +102,6 @@ def get_questions(
 
     try:
         return service.get_questions(
-            topic_id=topic_id,
             language=language,
             difficulty=difficulty,
         )
@@ -95,6 +112,10 @@ def get_questions(
             detail=str(exc),
         )
 
+
+# =========================================================
+# GET SINGLE CODING QUESTION
+# =========================================================
 
 @router.get(
     "/{question_id}",
@@ -120,6 +141,10 @@ def get_question(
     return question
 
 
+# =========================================================
+# UPDATE CODING QUESTION
+# =========================================================
+
 @router.put(
     "/{question_id}",
     response_model=CodingQuestionResponse,
@@ -144,6 +169,10 @@ def update_question(
             detail=str(exc),
         )
 
+
+# =========================================================
+# DELETE CODING QUESTION
+# =========================================================
 
 @router.delete(
     "/{question_id}",

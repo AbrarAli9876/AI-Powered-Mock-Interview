@@ -10,42 +10,30 @@ import {
 } from "react-router-dom";
 
 import {
-  CodingLanguage,
-  CodingQuestion,
-  Difficulty,
-  getCodingQuestions,
+  abandonCodingInterview,
+  getCodingInterview,
+  getCodingInterviewResult,
+  getCurrentCodingQuestion,
+  getNextCodingQuestion,
+  runCode,
+  submitCodingAnswer,
+  type CodingInterview,
+  type CodingInterviewQuestionResponse,
+  type CodingInterviewResult,
+  type CodingLanguage,
+  type CodingQuestion,
+  type CodeExecutionResponse,
+  type Difficulty,
 } from "../lib/api";
 
-
-interface LocationState {
-  topicId?: number;
-  language?: CodingLanguage;
-  difficulty?: Difficulty;
+interface CodingInterviewState {
+  sessionId?: number;
+  language: CodingLanguage;
+  difficulty: Difficulty;
   questionCount?: number;
+
   questions?: CodingQuestion[];
 }
-
-
-interface TestCaseResult {
-  test_case_number: number;
-  passed: boolean;
-  input_data: string;
-  expected_output: string;
-  actual_output: string;
-  error: string | null;
-  execution_time_ms: number | null;
-}
-
-
-interface CodeExecutionResponse {
-  success: boolean;
-  language: string;
-  total_test_cases: number;
-  passed_test_cases: number;
-  failed_test_cases: number;
-  results: TestCaseResult[];
-}
-
 
 const LANGUAGE_LABELS: Record<
   CodingLanguage,
@@ -57,197 +45,319 @@ const LANGUAGE_LABELS: Record<
   cpp: "C++",
 };
 
+const DIFFICULTY_LABELS: Record<
+  Difficulty,
+  string
+> = {
+  easy: "Easy",
+  medium: "Medium",
+  hard: "Hard",
+};
 
-function CodingInterviewRoom() {
+function formatExamples(
+  examples: string,
+): {
+  input: string;
+  output: string;
+}[] {
+  if (!examples) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(examples);
+
+    if (Array.isArray(parsed)) {
+      return parsed.map(
+        (example) => ({
+          input: String(
+            example.input ??
+            example.Input ??
+            "",
+          ),
+
+          output: String(
+            example.output ??
+            example.Output ??
+            "",
+          ),
+        }),
+      );
+    }
+
+    return [
+      {
+        input: String(
+          parsed.input ??
+          parsed.Input ??
+          "",
+        ),
+
+        output: String(
+          parsed.output ??
+          parsed.Output ??
+          "",
+        ),
+      },
+    ];
+  } catch {
+    return [
+      {
+        input: examples,
+        output: "",
+      },
+    ];
+  }
+}
+
+export default function CodingInterview() {
   const navigate = useNavigate();
 
-  const location =
-    useLocation();
+  const location = useLocation();
 
-  const locationState =
-    (location.state as LocationState | null) ??
-    null;
+  const interviewState =
+    location.state as
+      | CodingInterviewState
+      | null;
 
+  const initialSessionId =
+    interviewState?.sessionId;
 
-  const [questions, setQuestions] =
-    useState<CodingQuestion[]>(
-      locationState?.questions ?? [],
-    );
+  const [
+    sessionId,
+    setSessionId,
+  ] = useState<number | null>(
+    initialSessionId ?? null,
+  );
 
-  const [currentIndex, setCurrentIndex] =
-    useState(0);
+  const [
+    interview,
+    setInterview,
+  ] = useState<CodingInterview | null>(
+    null,
+  );
 
-  const [code, setCode] =
-    useState("");
-
-  const [loading, setLoading] =
-    useState(
-      locationState?.questions
-        ? false
-        : true,
-    );
-
-  const [running, setRunning] =
-    useState(false);
-
-  const [submitting, setSubmitting] =
-    useState(false);
-
-  const [executionResult, setExecutionResult] =
-    useState<CodeExecutionResponse | null>(
-      null,
-    );
-
-  const [error, setError] =
-    useState<string | null>(null);
-
-  const [showProblem, setShowProblem] =
-    useState(true);
-
+  const [
+    currentQuestionData,
+    setCurrentQuestionData,
+  ] = useState<
+    CodingInterviewQuestionResponse | null
+  >(null);
 
   const currentQuestion =
-    questions[currentIndex];
+    currentQuestionData?.question ?? null;
 
+  const [
+    code,
+    setCode,
+  ] = useState("");
 
-  const language =
-    currentQuestion?.language ??
-    locationState?.language ??
-    "python";
+  const [
+    isRunning,
+    setIsRunning,
+  ] = useState(false);
 
+  const [
+    executionResult,
+    setExecutionResult,
+  ] = useState<
+    CodeExecutionResponse | null
+  >(null);
 
-  const questionNumber =
-    currentIndex + 1;
-
-
-  const totalQuestions =
-    questions.length;
-
-
-  const progressPercentage =
-    totalQuestions > 0
-      ? (questionNumber / totalQuestions) * 100
-      : 0;
-
-
-  const isLastQuestion =
-    currentIndex ===
-    totalQuestions - 1;
-
-
-  const canSubmit =
+  const allTestsPassed =
     executionResult !== null &&
-    executionResult.success;
+    executionResult.success &&
+    executionResult.total_test_cases > 0 &&
+    executionResult.passed_test_cases ===
+      executionResult.total_test_cases;
 
+  const [
+    isSubmitting,
+    setIsSubmitting,
+  ] = useState(false);
 
-  const languageLabel =
-    LANGUAGE_LABELS[language];
+  const [
+    isSubmitted,
+    setIsSubmitted,
+  ] = useState(false);
 
+  const [
+    submitResult,
+    setSubmitResult,
+  ] = useState<{
+    success: boolean;
+    passed: number;
+    total: number;
+    score?: number;
+    isLastQuestion: boolean;
+  } | null>(null);
 
-  const formattedExamples =
-    useMemo(() => {
-      if (!currentQuestion?.examples) {
-        return [];
-      }
+  const [
+    isLoading,
+    setIsLoading,
+  ] = useState(true);
 
-      return currentQuestion.examples
-        .split(/\n\s*\n/)
-        .filter(
-          (example) =>
-            example.trim().length > 0,
-        );
-    }, [currentQuestion]);
+  const [
+    isLoadingNext,
+    setIsLoadingNext,
+  ] = useState(false);
 
+  const [
+    error,
+    setError,
+  ] = useState<string | null>(null);
+
+  const [
+    showExitConfirmation,
+    setShowExitConfirmation,
+  ] = useState(false);
+
+  const [
+    isLoadingResult,
+    setIsLoadingResult,
+  ] = useState(false);
+
+  const examples = useMemo(
+    () =>
+      currentQuestion
+        ? formatExamples(
+            currentQuestion.examples,
+          )
+        : [],
+    [currentQuestion],
+  );
 
   useEffect(() => {
-    async function loadQuestions() {
-      if (locationState?.questions?.length) {
-        return;
-      }
+    if (!interviewState) {
+      navigate(
+        "/coding-interview/setup",
+        {
+          replace: true,
+        },
+      );
 
-      if (
-        locationState?.topicId === undefined ||
-        !locationState.language ||
-        !locationState.difficulty
-      ) {
-        setError(
-          "Coding interview configuration is missing.",
-        );
+      return;
+    }
 
-        setLoading(false);
+    if (!initialSessionId) {
+      setError(
+        "Coding interview session was not found. Please start a new interview.",
+      );
 
-        return;
-      }
+      setIsLoading(false);
+    }
+  }, [
+    interviewState,
+    initialSessionId,
+    navigate,
+  ]);
 
+  useEffect(() => {
+    if (sessionId === null) {
+      return;
+    }
 
+    const id = sessionId;
+
+    let cancelled = false;
+
+    async function loadInterview() {
       try {
-        setLoading(true);
+        setIsLoading(true);
         setError(null);
 
-        const data =
-          await getCodingQuestions(
-            locationState.topicId,
-            locationState.language,
-            locationState.difficulty,
-          );
+        const [
+          interviewData,
+          questionData,
+        ] = await Promise.all([
+          getCodingInterview(
+            id,
+          ),
 
+          getCurrentCodingQuestion(
+            id,
+          ),
+        ]);
 
-        if (data.length === 0) {
-          setError(
-            "No coding questions are available for this interview.",
-          );
-
+        if (cancelled) {
           return;
         }
 
-
-        const requestedCount =
-          locationState.questionCount ??
-          data.length;
-
-
-        setQuestions(
-          data.slice(
-            0,
-            requestedCount,
-          ),
+        setInterview(
+          interviewData,
         );
+
+        setCurrentQuestionData(
+          questionData,
+        );
+
+        setCode(
+          questionData.question
+            .starter_code || "",
+        );
+
+        setExecutionResult(
+          null,
+        );
+
+        setSubmitResult(
+          null,
+        );
+
+        setIsSubmitted(false);
       } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
         setError(
           err instanceof Error
             ? err.message
-            : "Failed to load coding questions.",
+            : "Unable to load the coding interview.",
         );
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     }
 
+    void loadInterview();
 
-    loadQuestions();
-  }, [
-    locationState,
-  ]);
-
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   useEffect(() => {
-    if (currentQuestion) {
-      setCode(
-        currentQuestion.starter_code,
-      );
-
-      setExecutionResult(null);
-      setError(null);
-    }
-  }, [
-    currentQuestion,
-  ]);
-
-
-  async function executeCode() {
     if (!currentQuestion) {
       return;
     }
 
+    setCode(
+      currentQuestion.starter_code ||
+      "",
+    );
+
+    setExecutionResult(
+      null,
+    );
+
+    setSubmitResult(
+      null,
+    );
+
+    setIsSubmitted(false);
+
+    setError(null);
+  }, [
+    currentQuestion?.id,
+  ]);
+
+  async function handleRunCode() {
+    if (!currentQuestion) {
+      return;
+    }
 
     if (!code.trim()) {
       setError(
@@ -257,436 +367,592 @@ function CodingInterviewRoom() {
       return;
     }
 
-
     try {
-      setRunning(true);
       setError(null);
-      setExecutionResult(null);
 
+      setIsRunning(true);
 
-      const token =
-        localStorage.getItem(
-          "access_token",
-        );
-
-
-      const API_BASE_URL =
-        import.meta.env.VITE_API_BASE_URL ||
-        "http://127.0.0.1:8000";
-
-
-      const response =
-        await fetch(
-          `${API_BASE_URL}/code-execution/run`,
-          {
-            method: "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-
-              ...(token
-                ? {
-                    Authorization:
-                      `Bearer ${token}`,
-                  }
-                : {}),
-            },
-
-            body: JSON.stringify({
-              coding_question_id:
-                currentQuestion.id,
-
-              code,
-            }),
-          },
-        );
-
-
-      if (!response.ok) {
-        let message =
-          "Code execution failed.";
-
-
-        try {
-          const data =
-            await response.json();
-
-          message =
-            data.detail ||
-            message;
-        } catch {
-          // Keep default message.
-        }
-
-
-        throw new Error(message);
-      }
-
+      setExecutionResult(
+        null,
+      );
 
       const result =
-        (await response.json()) as CodeExecutionResponse;
+        await runCode(
+          currentQuestion.id,
+          code,
+        );
 
-
-      setExecutionResult(result);
+      setExecutionResult(
+        result,
+      );
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to execute code.",
+          : "Unable to execute the code.",
       );
     } finally {
-      setRunning(false);
+      setIsRunning(false);
     }
   }
 
+  async function handleSubmit() {
+    if (!sessionId) {
+      setError(
+        "Interview session not found.",
+      );
 
-  async function submitSolution() {
+      return;
+    }
+
     if (!currentQuestion) {
       return;
     }
 
-
-    if (!executionResult?.success) {
+    if (!code.trim()) {
       setError(
-        "Your solution must pass all test cases before submission.",
+        "Please write some code before submitting.",
       );
 
       return;
     }
 
+    if (!allTestsPassed) {
+      setError(
+        "Please run your code and pass all test cases before submitting.",
+      );
+
+      return;
+    }
+
+    if (isSubmitted) {
+      return;
+    }
 
     try {
-      setSubmitting(true);
       setError(null);
 
+      setIsSubmitting(true);
 
-      /*
-       * For now, successful submission moves
-       * to the next coding problem.
-       *
-       * Coding-answer persistence and AI
-       * evaluation will be connected in the
-       * next development step.
-       */
+      const result =
+        await submitCodingAnswer(
+          sessionId,
+          code,
+        );
 
+      setSubmitResult({
+        success:
+          result.success,
 
-      if (isLastQuestion) {
+        passed:
+          result.passed_test_cases,
+
+        total:
+          result.total_test_cases,
+
+        score:
+          result.score,
+
+        isLastQuestion:
+          result.is_last_question,
+      });
+
+      setIsSubmitted(true);
+
+      setInterview(
+        (previous) =>
+          previous
+            ? {
+                ...previous,
+
+                current_question_number:
+                  result.question_number,
+              }
+            : previous,
+      );
+
+      if (result.is_last_question) {
+        setIsLoadingResult(true);
+
+        const finalResult =
+          await getCodingInterviewResult(
+            sessionId,
+          );
+
         navigate(
-          "/dashboard",
+          "/coding-interview/result",
           {
-            replace: true,
+            state: {
+              result: finalResult,
+            },
           },
         );
 
         return;
       }
-
-
-      setCurrentIndex(
-        (previous) =>
-          previous + 1,
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to submit your solution.",
       );
     } finally {
-      setSubmitting(false);
+      setIsSubmitting(false);
+
+      setIsLoadingResult(false);
     }
   }
 
-
-  function handleBack() {
-    const confirmed =
-      window.confirm(
-        "Are you sure you want to leave this coding interview? Your current progress may be lost.",
+  async function handleNextQuestion() {
+    if (!sessionId) {
+      setError(
+        "Interview session not found.",
       );
 
+      return;
+    }
 
-    if (confirmed) {
-      navigate("/home");
+    if (!isSubmitted) {
+      setError(
+        "Please submit your solution before moving to the next question.",
+      );
+
+      return;
+    }
+
+    if (
+      submitResult?.isLastQuestion
+    ) {
+      return;
+    }
+
+    try {
+      setError(null);
+
+      setIsLoadingNext(true);
+
+      const nextQuestion =
+        await getNextCodingQuestion(
+          sessionId,
+        );
+
+      setCurrentQuestionData(
+        nextQuestion,
+      );
+
+      setCode(
+        nextQuestion.question
+          .starter_code || "",
+      );
+
+      setExecutionResult(
+        null,
+      );
+
+      setSubmitResult(
+        null,
+      );
+
+      setIsSubmitted(false);
+
+      const updatedInterview =
+        await getCodingInterview(
+          sessionId,
+        );
+
+      setInterview(
+        updatedInterview,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load the next question.",
+      );
+    } finally {
+      setIsLoadingNext(false);
     }
   }
 
+  useEffect(() => {
+    function handleKeyboard(
+      event: KeyboardEvent,
+    ) {
+      if (
+        (event.ctrlKey ||
+          event.metaKey) &&
+        event.key === "Enter"
+      ) {
+        event.preventDefault();
 
-  if (loading) {
+        void handleRunCode();
+      }
+    }
+
+    window.addEventListener(
+      "keydown",
+      handleKeyboard,
+    );
+
+    return () =>
+      window.removeEventListener(
+        "keydown",
+        handleKeyboard,
+      );
+  }, [
+    code,
+    currentQuestion,
+  ]);
+
+  async function handleExit() {
+    if (!sessionId) {
+      navigate("/home");
+
+      return;
+    }
+
+    try {
+      await abandonCodingInterview(
+        sessionId,
+      );
+    } catch {
+    }
+
+    navigate("/home");
+  }
+
+  if (
+    isLoading ||
+    !interviewState
+  ) {
     return (
-      <div className="app-background flex min-h-screen items-center justify-center">
-        <div className="app-grid" />
+      <div className="app-background min-h-screen flex items-center justify-center">
+        <div className="text-center">
 
-        <div className="glass-panel relative z-10 rounded-2xl px-8 py-10 text-center">
-          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
+          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-violet-400" />
 
           <p className="text-sm text-slate-400">
-            Preparing your coding interview...
+            Preparing coding interview...
           </p>
+
         </div>
       </div>
     );
   }
 
-
-  if (error && !currentQuestion) {
+  if (
+    !sessionId ||
+    !currentQuestion
+  ) {
     return (
-      <div className="app-background flex min-h-screen items-center justify-center px-6">
-        <div className="app-grid" />
+      <div className="app-background min-h-screen flex items-center justify-center px-6">
 
-        <div className="glass-panel relative z-10 w-full max-w-lg rounded-2xl p-8 text-center">
+        <div className="max-w-md text-center">
 
-          <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-rose-500/10 text-rose-400">
-            !
-          </div>
+          <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-rose-400">
+            Coding Interview
+          </p>
 
-          <h1 className="text-2xl font-semibold text-white">
-            Unable to start interview
+          <h1 className="mt-3 text-xl font-semibold text-white">
+            Unable to load interview
           </h1>
 
           <p className="mt-3 text-sm leading-6 text-slate-400">
-            {error}
+            {error ||
+              "The coding interview session could not be loaded."}
           </p>
 
           <button
             type="button"
             onClick={() =>
-              navigate("/coding-interview/new")
+              navigate(
+                "/coding-interview/setup",
+              )
             }
-            className="mt-7 rounded-xl bg-violet-500 px-6 py-3 text-sm font-semibold text-white hover:bg-violet-400"
+            className="mt-6 rounded-lg bg-violet-500 px-5 py-2.5 text-xs font-semibold text-white hover:bg-violet-400"
           >
-            Back to setup
+            Start New Interview
           </button>
 
         </div>
+
       </div>
     );
   }
 
+  const questionNumber =
+    currentQuestionData
+      ?.question_number ??
+    interview?.current_question_number ??
+    1;
 
-  if (!currentQuestion) {
-    return null;
-  }
-
+  const totalQuestions =
+    currentQuestionData
+      ?.total_questions ??
+    interview?.total_questions ??
+    interviewState.questionCount ??
+    0;
 
   return (
-    <div className="app-background min-h-screen">
+    <div className="app-background min-h-screen text-white">
+
       <div className="app-grid" />
 
-      <main className="relative z-10 flex min-h-screen flex-col">
+      <header className="relative z-20 border-b border-white/[0.06] bg-black/20 backdrop-blur-xl">
 
-        {/* =================================================
-            TOP BAR
-        ================================================== */}
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-5 py-4">
 
-        <header className="border-b border-white/10 bg-black/20 backdrop-blur-xl">
+          <div className="flex items-center gap-4">
 
-          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-6 px-5 py-4">
+            <button
+              type="button"
+              onClick={() =>
+                setShowExitConfirmation(
+                  true,
+                )
+              }
+              className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-400 hover:text-white"
+            >
+              ← Exit
+            </button>
 
-            <div className="flex items-center gap-5">
+            <div>
 
-              <button
-                type="button"
-                onClick={handleBack}
-                className="text-sm text-slate-400 hover:text-white"
-              >
-                ← Exit
-              </button>
+              <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-600">
+                Coding Interview
+              </p>
 
-              <div className="hidden h-6 w-px bg-white/10 sm:block" />
+              <p className="mt-1 text-sm font-medium text-slate-200">
 
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-slate-500">
-                  Coding Interview
-                </p>
+                Question{" "}
+                {questionNumber}
 
-                <p className="mt-1 text-sm font-medium text-white">
-                  {languageLabel}
-                  {" · "}
-                  {currentQuestion.difficulty}
-                </p>
-              </div>
+                {" "}of{" "}
 
-            </div>
+                {totalQuestions}
 
-
-            <div className="flex items-center gap-4">
-
-              <div className="hidden text-right sm:block">
-                <p className="text-xs text-slate-500">
-                  Question
-                </p>
-
-                <p className="text-sm font-semibold text-white">
-                  {questionNumber}
-                  {" / "}
-                  {totalQuestions}
-                </p>
-              </div>
-
-              <div className="h-2 w-24 overflow-hidden rounded-full bg-white/10 sm:w-32">
-                <div
-                  className="h-full rounded-full bg-violet-400 transition-all duration-300"
-                  style={{
-                    width:
-                      `${progressPercentage}%`,
-                  }}
-                />
-              </div>
+              </p>
 
             </div>
 
           </div>
 
-        </header>
+          <div className="flex items-center gap-3">
 
+            <span className="rounded-full border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-1 text-xs text-cyan-300">
 
-        {/* =================================================
-            MOBILE PROBLEM TOGGLE
-        ================================================== */}
+              {
+                LANGUAGE_LABELS[
+                  interviewState.language
+                ]
+              }
 
-        <div className="border-b border-white/10 bg-black/10 px-5 py-3 lg:hidden">
+            </span>
 
-          <button
-            type="button"
-            onClick={() =>
-              setShowProblem(
-                (previous) =>
-                  !previous,
-              )
-            }
-            className="text-sm font-medium text-violet-300"
-          >
-            {showProblem
-              ? "Hide problem"
-              : "Show problem"}
-          </button>
+            <span className="rounded-full border border-violet-400/20 bg-violet-400/[0.06] px-3 py-1 text-xs text-violet-300">
+
+              {
+                DIFFICULTY_LABELS[
+                  interviewState.difficulty
+                ]
+              }
+
+            </span>
+
+          </div>
 
         </div>
 
+      </header>
 
-        {/* =================================================
-            MAIN INTERVIEW AREA
-        ================================================== */}
+      {error && (
 
-        <div className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-0 lg:grid lg:grid-cols-[minmax(320px,0.85fr)_minmax(500px,1.4fr)]">
+        <div className="relative z-20 border-b border-rose-400/20 bg-rose-400/[0.05] px-5 py-3">
 
-          {/* =================================================
-              PROBLEM PANEL
-          ================================================== */}
+          <div className="mx-auto max-w-[1600px] text-sm text-rose-300">
+            {error}
+          </div>
 
-          <section
-            className={`border-b border-white/10 lg:border-b-0 lg:border-r ${
-              showProblem
-                ? "block"
-                : "hidden lg:block"
-            }`}
-          >
+        </div>
 
-            <div className="h-full overflow-y-auto p-6 md:p-8 lg:max-h-[calc(100vh-81px)]">
+      )}
 
-              <div className="mb-8">
+      <main className="relative z-10 mx-auto max-w-[1600px] px-4 py-5 lg:px-6">
 
-                <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="grid min-h-[calc(100vh-130px)] gap-5 lg:grid-cols-2">
 
-                  <span className="rounded-full border border-violet-400/20 bg-violet-400/10 px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-violet-300">
-                    {currentQuestion.difficulty}
-                  </span>
+          <section className="glass-panel flex min-h-[650px] flex-col overflow-hidden rounded-2xl">
 
-                  <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-cyan-300">
-                    {languageLabel}
-                  </span>
+            <div className="border-b border-white/[0.06] px-6 py-5">
+
+              <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-600">
+                Problem
+              </p>
+
+              <h1 className="mt-2 text-2xl font-semibold text-white">
+                {currentQuestion.title}
+              </h1>
+
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-6">
+
+              <h2 className="mb-3 text-sm font-semibold text-white">
+                Problem Statement
+              </h2>
+
+              <div className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
+                {
+                  currentQuestion.problem_statement
+                }
+              </div>
+
+              <div className="mt-8">
+
+                <h2 className="mb-3 text-sm font-semibold text-white">
+                  💡 Hints
+                </h2>
+
+                <div className="space-y-3">
+
+                  <div className="rounded-xl border border-amber-400/10 bg-amber-400/[0.04] p-4">
+
+                    <p className="mb-2 font-mono text-[9px] uppercase tracking-[0.15em] text-amber-400/70">
+                      Hint 1
+                    </p>
+
+                    <p className="text-sm leading-6 text-slate-300">
+                      {currentQuestion.hint_1}
+                    </p>
+
+                  </div>
+
+                  <div className="rounded-xl border border-amber-400/10 bg-amber-400/[0.04] p-4">
+
+                    <p className="mb-2 font-mono text-[9px] uppercase tracking-[0.15em] text-amber-400/70">
+                      Hint 2
+                    </p>
+
+                    <p className="text-sm leading-6 text-slate-300">
+                      {currentQuestion.hint_2}
+                    </p>
+
+                  </div>
 
                 </div>
-
-
-                <h1 className="text-3xl font-semibold tracking-tight text-white">
-                  {currentQuestion.title}
-                </h1>
 
               </div>
 
+              <div className="mt-8">
 
-              <div className="space-y-8">
+                <h2 className="mb-3 text-sm font-semibold text-white">
+                  Input Format
+                </h2>
 
-                {/* Problem */}
-                <div>
-                  <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Problem
-                  </h2>
+                <div className="whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/20 p-4 font-mono text-xs leading-6 text-slate-400">
+                  {
+                    currentQuestion.input_format
+                  }
+                </div>
 
-                  <p className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
-                    {currentQuestion.problem_statement}
+              </div>
+
+              <div className="mt-6">
+
+                <h2 className="mb-3 text-sm font-semibold text-white">
+                  Output Format
+                </h2>
+
+                <div className="whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/20 p-4 font-mono text-xs leading-6 text-slate-400">
+                  {
+                    currentQuestion.output_format
+                  }
+                </div>
+
+              </div>
+
+              <div className="mt-6">
+
+                <h2 className="mb-3 text-sm font-semibold text-white">
+                  Constraints
+                </h2>
+
+                <div className="whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/20 p-4 font-mono text-xs leading-6 text-slate-400">
+                  {
+                    currentQuestion.constraints
+                  }
+                </div>
+
+              </div>
+
+              <div className="mt-6">
+
+                <h2 className="mb-3 text-sm font-semibold text-white">
+                  Examples
+                </h2>
+
+                {examples.length === 0 ? (
+
+                  <p className="text-sm text-slate-500">
+                    No examples available.
                   </p>
-                </div>
 
+                ) : (
 
-                {/* Input */}
-                <div>
-                  <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Input
-                  </h2>
+                  <div className="space-y-4">
 
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-slate-400">
-                      {currentQuestion.input_format}
-                    </p>
-                  </div>
-                </div>
+                    {examples.map(
+                      (
+                        example,
+                        index,
+                      ) => (
 
+                        <div
+                          key={index}
+                          className="rounded-xl border border-white/[0.06] bg-black/20 p-4"
+                        >
 
-                {/* Output */}
-                <div>
-                  <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Output
-                  </h2>
+                          <p className="mb-3 font-mono text-[9px] uppercase tracking-[0.15em] text-slate-600">
+                            Example{" "}
+                            {index + 1}
+                          </p>
 
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-slate-400">
-                      {currentQuestion.output_format}
-                    </p>
-                  </div>
-                </div>
+                          <div className="grid gap-4 md:grid-cols-2">
 
+                            <div>
 
-                {/* Constraints */}
-                <div>
-                  <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Constraints
-                  </h2>
+                              <p className="mb-2 text-xs text-slate-600">
+                                Input
+                              </p>
 
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-                    <p className="whitespace-pre-wrap font-mono text-xs leading-6 text-slate-400">
-                      {currentQuestion.constraints}
-                    </p>
-                  </div>
-                </div>
+                              <pre className="whitespace-pre-wrap font-mono text-xs text-slate-400">
+                                {example.input}
+                              </pre>
 
+                            </div>
 
-                {/* Examples */}
-                <div>
-                  <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                    Examples
-                  </h2>
+                            <div>
 
-                  <div className="space-y-3">
+                              <p className="mb-2 text-xs text-slate-600">
+                                Output
+                              </p>
 
-                    {formattedExamples.length > 0 ? (
-                      formattedExamples.map(
-                        (
-                          example,
-                          index,
-                        ) => (
-                          <pre
-                            key={index}
-                            className="overflow-x-auto rounded-xl border border-white/10 bg-black/30 p-4 font-mono text-xs leading-6 text-slate-300"
-                          >
-                            {example}
-                          </pre>
-                        ),
-                      )
-                    ) : (
-                      <pre className="overflow-x-auto rounded-xl border border-white/10 bg-black/30 p-4 font-mono text-xs leading-6 text-slate-300">
-                        {currentQuestion.examples}
-                      </pre>
+                              <pre className="whitespace-pre-wrap font-mono text-xs text-slate-400">
+                                {example.output}
+                              </pre>
+
+                            </div>
+
+                          </div>
+
+                        </div>
+
+                      ),
                     )}
 
                   </div>
-                </div>
+
+                )}
 
               </div>
 
@@ -694,269 +960,456 @@ function CodingInterviewRoom() {
 
           </section>
 
+          <section className="flex min-h-[650px] flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0a0a0f]">
 
-          {/* =================================================
-              CODE PANEL
-          ================================================== */}
-
-          <section className="flex min-h-[650px] flex-1 flex-col">
-
-            {/* Editor Header */}
-            <div className="flex items-center justify-between border-b border-white/10 bg-black/20 px-5 py-3">
+            <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02] px-4 py-3">
 
               <div className="flex items-center gap-3">
 
                 <div className="flex gap-1.5">
-                  <div className="h-2.5 w-2.5 rounded-full bg-rose-400/70" />
-                  <div className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
-                  <div className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
+
+                  <span className="h-2.5 w-2.5 rounded-full bg-red-400/60" />
+
+                  <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/60" />
+
+                  <span className="h-2.5 w-2.5 rounded-full bg-green-400/60" />
+
                 </div>
 
                 <span className="font-mono text-xs text-slate-500">
-                  solution
+
+                  {
+                    interviewState.language ===
+                    "python"
+                      ? "solution.py"
+                      : interviewState.language ===
+                        "javascript"
+                        ? "solution.js"
+                        : interviewState.language ===
+                          "java"
+                          ? "Solution.java"
+                          : "solution.cpp"
+                  }
+
                 </span>
 
               </div>
 
-
-              <span className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-1 font-mono text-xs text-slate-400">
-                {languageLabel}
+              <span className="text-xs text-slate-600">
+                Ctrl + Enter to run
               </span>
 
             </div>
 
-
-            {/* Editor */}
-            <div className="relative flex-1 bg-[#080b12]">
+            <div className="relative min-h-[350px] flex-1">
 
               <textarea
                 value={code}
                 onChange={(event) => {
-                  setCode(
-                    event.target.value,
-                  );
+                  setCode(event.target.value);
 
-                  setExecutionResult(
-                    null,
-                  );
-
-                  setError(null);
+                  setExecutionResult(null);
+                  setSubmitResult(null);
+                  setIsSubmitted(false);
                 }}
                 spellCheck={false}
-                className="h-full min-h-[420px] w-full resize-none border-0 bg-transparent p-6 font-mono text-sm leading-7 text-slate-200 outline-none"
+                disabled={isSubmitted}
+                className="absolute inset-0 h-full w-full resize-none overflow-auto bg-transparent p-5 font-mono text-sm leading-6 text-slate-200 outline-none disabled:cursor-not-allowed disabled:opacity-70"
                 placeholder="Write your solution here..."
               />
 
             </div>
 
+            <div className="border-t border-white/[0.06]">
 
-            {/* Error */}
-            {error && (
-              <div className="border-t border-rose-500/20 bg-rose-500/5 px-5 py-3">
-                <p className="text-sm text-rose-300">
-                  {error}
-                </p>
-              </div>
-            )}
+              <div className="border-b border-white/[0.05] px-4 py-3">
 
+                <div className="flex items-center justify-between">
 
-            {/* =================================================
-                TEST RESULTS
-            ================================================== */}
+                  <div>
 
-            <div className="max-h-[280px] overflow-y-auto border-t border-white/10 bg-black/20">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-600">
+                      Test Results
+                    </p>
 
-              <div className="px-5 py-4">
+                    {executionResult && (
 
-                <div className="mb-4 flex items-center justify-between">
+                      <p className="mt-1 text-xs text-slate-400">
 
-                  <h2 className="text-sm font-semibold text-white">
-                    Test Results
-                  </h2>
+                        {
+                          executionResult.passed_test_cases
+                        }
+
+                        /
+
+                        {
+                          executionResult.total_test_cases
+                        }
+
+                        {" "}
+                        test cases passed
+
+                      </p>
+
+                    )}
+
+                  </div>
 
                   {executionResult && (
+
                     <span
-                      className={`text-xs font-medium ${
+                      className={`rounded-full px-3 py-1 text-[10px] font-semibold ${
                         executionResult.success
-                          ? "text-emerald-400"
-                          : "text-amber-400"
+                          ? "bg-emerald-400/10 text-emerald-300"
+                          : "bg-rose-400/10 text-rose-300"
                       }`}
                     >
                       {
-                        executionResult.passed_test_cases
+                        executionResult.success
+                          ? "All Tests Passed"
+                          : "Some Tests Failed"
                       }
-                      {" / "}
-                      {
-                        executionResult.total_test_cases
-                      }
-                      {" passed"}
                     </span>
+
                   )}
 
                 </div>
 
+              </div>
+
+              <div className="max-h-64 overflow-y-auto px-4 py-4">
 
                 {!executionResult ? (
-                  <div className="rounded-xl border border-dashed border-white/10 px-5 py-7 text-center">
-                    <p className="text-sm text-slate-500">
-                      Run your code to see the
-                      test results.
-                    </p>
+
+                  <div className="rounded-lg border border-white/[0.05] bg-white/[0.015] px-4 py-4 text-xs text-slate-600">
+                    Run your code to validate all test cases. Submission
+                    will be enabled only when every test case passes.
                   </div>
+
                 ) : (
+
                   <div className="space-y-3">
 
                     {executionResult.results.map(
                       (result) => (
+
                         <div
                           key={
                             result.test_case_number
                           }
                           className={`rounded-xl border p-4 ${
                             result.passed
-                              ? "border-emerald-400/20 bg-emerald-400/5"
-                              : "border-rose-400/20 bg-rose-400/5"
+                              ? "border-emerald-400/20 bg-emerald-400/[0.04]"
+                              : "border-rose-400/20 bg-rose-400/[0.04]"
                           }`}
                         >
 
                           <div className="flex items-center justify-between">
 
-                            <div className="flex items-center gap-3">
+                            <span className="text-xs font-medium text-slate-300">
+                              Test Case{" "}
+                              {
+                                result.test_case_number
+                              }
+                            </span>
 
-                              <span
-                                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                                  result.passed
-                                    ? "bg-emerald-400/10 text-emerald-400"
-                                    : "bg-rose-400/10 text-rose-400"
-                                }`}
-                              >
-                                {result.passed
-                                  ? "✓"
-                                  : "×"}
-                              </span>
-
-                              <span className="text-sm font-medium text-white">
-                                Test Case{" "}
-                                {
-                                  result.test_case_number
-                                }
-                              </span>
-
-                            </div>
-
-
-                            {result.execution_time_ms !==
-                              null && (
-                              <span className="font-mono text-[10px] text-slate-500">
-                                {
-                                  result.execution_time_ms.toFixed(
-                                    0,
-                                  )
-                                }
-                                {" ms"}
-                              </span>
-                            )}
+                            <span
+                              className={`text-[10px] font-semibold uppercase tracking-[0.1em] ${
+                                result.passed
+                                  ? "text-emerald-300"
+                                  : "text-rose-300"
+                              }`}
+                            >
+                              {
+                                result.passed
+                                  ? "Passed"
+                                  : "Failed"
+                              }
+                            </span>
 
                           </div>
 
+                          <div className="mt-3 grid gap-4 md:grid-cols-3">
 
-                          {!result.passed && (
-                            <div className="mt-4 space-y-3">
+                            <div>
 
-                              <div>
-                                <p className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">
-                                  Expected
-                                </p>
+                              <p className="mb-1 text-[10px] uppercase tracking-wider text-slate-600">
+                                Input
+                              </p>
 
-                                <pre className="overflow-x-auto rounded-lg bg-black/20 p-3 font-mono text-xs text-slate-300">
-                                  {result.expected_output}
-                                </pre>
-                              </div>
-
-
-                              <div>
-                                <p className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">
-                                  Actual
-                                </p>
-
-                                <pre className="overflow-x-auto rounded-lg bg-black/20 p-3 font-mono text-xs text-slate-300">
-                                  {result.actual_output ||
-                                    "No output"}
-                                </pre>
-                              </div>
-
-
-                              {result.error && (
-                                <div>
-                                  <p className="mb-1 text-[10px] uppercase tracking-wider text-rose-400">
-                                    Error
-                                  </p>
-
-                                  <pre className="overflow-x-auto rounded-lg bg-black/20 p-3 font-mono text-xs text-rose-300">
-                                    {result.error}
-                                  </pre>
-                                </div>
-                              )}
+                              <pre className="whitespace-pre-wrap font-mono text-xs text-slate-400">
+                                {
+                                  result.input_data
+                                }
+                              </pre>
 
                             </div>
+
+                            <div>
+
+                              <p className="mb-1 text-[10px] uppercase tracking-wider text-slate-600">
+                                Expected
+                              </p>
+
+                              <pre className="whitespace-pre-wrap font-mono text-xs text-slate-400">
+                                {
+                                  result.expected_output
+                                }
+                              </pre>
+
+                            </div>
+
+                            <div>
+
+                              <p className="mb-1 text-[10px] uppercase tracking-wider text-slate-600">
+                                Actual
+                              </p>
+
+                              <pre className="whitespace-pre-wrap font-mono text-xs text-slate-400">
+                                {
+                                  result.actual_output ||
+                                  "—"
+                                }
+                              </pre>
+
+                            </div>
+
+                          </div>
+
+                          {result.error && (
+
+                            <div className="mt-3 rounded-lg bg-rose-400/[0.05] p-3">
+
+                              <p className="mb-1 text-[10px] uppercase tracking-wider text-rose-400">
+                                Error
+                              </p>
+
+                              <pre className="whitespace-pre-wrap font-mono text-xs leading-5 text-rose-300">
+                                {
+                                  result.error
+                                }
+                              </pre>
+
+                            </div>
+
+                          )}
+
+                          {result.execution_time_ms !==
+                            null && (
+
+                            <p className="mt-3 font-mono text-[10px] text-slate-600">
+
+                              Execution time:{" "}
+                              {
+                                result.execution_time_ms.toFixed(
+                                  2,
+                                )
+                              }
+                              ms
+
+                            </p>
+
                           )}
 
                         </div>
+
                       ),
                     )}
 
                   </div>
+
                 )}
 
               </div>
 
             </div>
 
+            {submitResult && (
 
-            {/* =================================================
-                ACTION BAR
-            ================================================== */}
+              <div className="border-t border-white/[0.06] px-4 py-4">
 
-            <div className="flex flex-col gap-3 border-t border-white/10 bg-black/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div
+                  className={`rounded-xl border p-4 ${
+                    submitResult.success
+                      ? "border-emerald-400/20 bg-emerald-400/[0.04]"
+                      : "border-rose-400/20 bg-rose-400/[0.04]"
+                  }`}
+                >
 
-              <div className="text-xs text-slate-500">
+                  <div className="flex items-center justify-between">
 
-                {executionResult?.success
-                  ? "All test cases passed."
-                  : "Run your code before submitting."}
+                    <div>
+
+                      <p className="text-sm font-semibold text-white">
+                        {
+                          submitResult.success
+                            ? "Solution Accepted"
+                            : "Solution Submitted"
+                        }
+                      </p>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        {
+                          submitResult.passed
+                        }
+                        /
+                        {
+                          submitResult.total
+                        }
+                        {" "}
+                        test cases passed
+                      </p>
+
+                    </div>
+
+                    {submitResult.score !==
+                      undefined && (
+
+                      <span className="text-lg font-semibold text-violet-300">
+                        {
+                          submitResult.score
+                        }%
+                      </span>
+
+                    )}
+
+                  </div>
+
+                </div>
 
               </div>
 
+            )}
+
+            <div className="flex items-center justify-between border-t border-white/[0.06] bg-white/[0.015] px-4 py-4">
+
+              <div>
+
+                {isSubmitted && (
+                  <span className="text-[10px] uppercase tracking-wider text-emerald-300">
+                    ✓ Submitted
+                  </span>
+                )}
+
+              </div>
 
               <div className="flex gap-3">
 
                 <button
                   type="button"
-                  onClick={executeCode}
-                  disabled={running}
-                  className="rounded-xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={
+                    handleRunCode
+                  }
+                  disabled={
+                    isRunning ||
+                    isSubmitting ||
+                    isSubmitted
+                  }
+                  className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-xs font-semibold text-slate-300 hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {running
+                  {isRunning
                     ? "Running..."
                     : "▶ Run Code"}
                 </button>
 
+                {!isSubmitted && (
 
-                <button
-                  type="button"
-                  onClick={submitSolution}
-                  disabled={
-                    submitting ||
-                    !canSubmit
-                  }
-                  className="rounded-xl bg-violet-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-500/20 hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {submitting
-                    ? "Submitting..."
-                    : isLastQuestion
-                      ? "Submit & Finish"
-                      : "Submit & Next →"}
-                </button>
+                  <button
+                    type="button"
+                    onClick={
+                      handleSubmit
+                    }
+                    disabled={
+                      isRunning ||
+                      isSubmitting ||
+                      !allTestsPassed
+                    }
+                    className={`rounded-lg px-5 py-2.5 text-xs font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50 ${
+                      allTestsPassed
+                        ? "bg-emerald-500 shadow-emerald-500/20 hover:bg-emerald-400"
+                        : "bg-slate-700/60 shadow-none"
+                    }`}
+                  >
+                    {isSubmitting
+                      ? "Submitting..."
+                      : allTestsPassed
+                        ? "✓ Submit Solution"
+                        : "✓ Pass All Tests to Submit"}
+                  </button>
+
+                )}
+
+                {isSubmitted &&
+                  !submitResult?.isLastQuestion && (
+
+                  <button
+                    type="button"
+                    onClick={
+                      handleNextQuestion
+                    }
+                    disabled={
+                      isLoadingNext
+                    }
+                    className="rounded-lg bg-violet-500 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-violet-500/20 hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isLoadingNext
+                      ? "Loading..."
+                      : "Next Question →"}
+                  </button>
+
+                )}
+
+                {isSubmitted &&
+                  submitResult?.isLastQuestion && (
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!sessionId) {
+                        return;
+                      }
+
+                      try {
+                        setIsLoadingResult(
+                          true,
+                        );
+
+                        const result =
+                          await getCodingInterviewResult(
+                            sessionId,
+                          );
+
+                        navigate(
+                          "/coding-interview/result",
+                          {
+                            state: {
+                              result,
+                            },
+                          },
+                        );
+                      } catch (err) {
+                        setError(
+                          err instanceof Error
+                            ? err.message
+                            : "Unable to load the final result.",
+                        );
+                      } finally {
+                        setIsLoadingResult(
+                          false,
+                        );
+                      }
+                    }}
+                    disabled={
+                      isLoadingResult
+                    }
+                    className="rounded-lg bg-violet-500 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-violet-500/20 hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isLoadingResult
+                      ? "Loading Result..."
+                      : "View Final Result →"}
+                  </button>
+
+                )}
 
               </div>
 
@@ -967,9 +1420,59 @@ function CodingInterviewRoom() {
         </div>
 
       </main>
+
+      {showExitConfirmation && (
+
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6 backdrop-blur-sm">
+
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111116] p-7 shadow-2xl">
+
+            <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-rose-400">
+              Leave Interview
+            </p>
+
+            <h2 className="mt-3 text-xl font-semibold text-white">
+              Exit coding interview?
+            </h2>
+
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Your current code will not be submitted.
+              Leaving the interview will mark this
+              coding interview as abandoned.
+            </p>
+
+            <div className="mt-7 flex justify-end gap-3">
+
+              <button
+                type="button"
+                onClick={() =>
+                  setShowExitConfirmation(
+                    false,
+                  )
+                }
+                className="rounded-lg border border-white/10 px-4 py-2.5 text-xs text-slate-400 hover:text-white"
+              >
+                Continue
+              </button>
+
+              <button
+                type="button"
+                onClick={
+                  handleExit
+                }
+                className="rounded-lg bg-rose-500 px-4 py-2.5 text-xs font-semibold text-white hover:bg-rose-400"
+              >
+                Exit Interview
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      )}
+
     </div>
   );
 }
-
-
-export default CodingInterviewRoom;

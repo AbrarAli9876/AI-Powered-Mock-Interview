@@ -9,7 +9,15 @@ from app.models.interview_answer import InterviewAnswer
 
 from app.models.coding_question import CodingQuestion
 from app.models.coding_test_case import CodingTestCase
-
+from app.models.coding_interview_session import (
+    CodingInterviewSession,
+)
+from app.models.coding_interview_question import (
+    CodingInterviewQuestion,
+)
+from app.models.coding_interview_answer import (
+    CodingInterviewAnswer,
+)
 
 __all__ = [
     "Base",
@@ -20,4 +28,7 @@ __all__ = [
     "InterviewAnswer",
     "CodingQuestion",
     "CodingTestCase",
+    "CodingInterviewSession",
+    "CodingInterviewQuestion",
+    "CodingInterviewAnswer",
 ]

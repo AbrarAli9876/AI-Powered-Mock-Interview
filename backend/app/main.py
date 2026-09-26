@@ -15,6 +15,9 @@ from app.api.coding_question_routes import (
 from app.api.code_execution_routes import (
     router as code_execution_router,
 )
+from app.api.coding_interview_routes import (
+    router as coding_interview_router,
+)
 
 
 app = FastAPI(
@@ -33,7 +36,7 @@ app.add_middleware(
 
 
 # =========================================================
-# API ROUTERS
+# ROUTERS
 # =========================================================
 
 app.include_router(auth_router)
@@ -52,7 +55,7 @@ app.include_router(coding_question_router)
 
 app.include_router(code_execution_router)
 
-
+app.include_router(coding_interview_router)
 # =========================================================
 # ROOT
 # =========================================================
@@ -65,7 +68,7 @@ def root():
 
 
 # =========================================================
-# HEALTH CHECK
+# HEALTH
 # =========================================================
 
 @app.get("/health")
