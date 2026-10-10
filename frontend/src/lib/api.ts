@@ -403,6 +403,7 @@ export async function getTopics():
 export async function createInterview(
   topicId: number,
   startingDifficulty: Difficulty,
+  questionCount: 10 | 15 | 20 = 10,
 ): Promise<Interview> {
 
   return request<Interview>(
@@ -416,6 +417,9 @@ export async function createInterview(
 
         starting_difficulty:
           startingDifficulty,
+
+        question_count:
+          questionCount,
       }),
     },
   );

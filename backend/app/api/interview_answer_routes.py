@@ -20,6 +20,10 @@ router = APIRouter(
 )
 
 
+# =========================================================
+# CREATE INTERVIEW ANSWER
+# =========================================================
+
 @router.post(
     "",
     response_model=InterviewAnswerResponse,
@@ -42,8 +46,12 @@ def create_answer(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
-        )
+        ) from exc
 
+
+# =========================================================
+# GET ALL ANSWERS FOR AN INTERVIEW
+# =========================================================
 
 @router.get(
     "/session/{session_id}",
@@ -66,8 +74,12 @@ def get_session_answers(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
-        )
+        ) from exc
 
+
+# =========================================================
+# GET SINGLE ANSWER
+# =========================================================
 
 @router.get(
     "/{answer_id}",
@@ -94,6 +106,10 @@ def get_answer(
     return answer
 
 
+# =========================================================
+# UPDATE ANSWER
+# =========================================================
+
 @router.put(
     "/{answer_id}",
     response_model=InterviewAnswerResponse,
@@ -117,4 +133,4 @@ def update_answer(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
-        )
+        ) from exc

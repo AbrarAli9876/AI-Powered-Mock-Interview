@@ -20,6 +20,10 @@ router = APIRouter(
 )
 
 
+# =========================================================
+# CREATE INTERVIEW
+# =========================================================
+
 @router.post(
     "",
     response_model=InterviewResponse,
@@ -45,6 +49,10 @@ def create_interview(
         )
 
 
+# =========================================================
+# GET USER INTERVIEWS
+# =========================================================
+
 @router.get(
     "",
     response_model=list[InterviewResponse],
@@ -59,6 +67,10 @@ def get_interviews(
         current_user.id
     )
 
+
+# =========================================================
+# GET INTERVIEW RESULT
+# =========================================================
 
 @router.get(
     "/{session_id}/result",
@@ -90,6 +102,10 @@ def get_interview_result(
         )
 
 
+# =========================================================
+# GET NEXT QUESTION
+# =========================================================
+
 @router.get(
     "/{session_id}/next-question",
     response_model=QuestionResponse,
@@ -120,6 +136,10 @@ def get_next_question(
         )
 
 
+# =========================================================
+# GET INTERVIEW
+# =========================================================
+
 @router.get(
     "/{session_id}",
     response_model=InterviewResponse,
@@ -149,6 +169,10 @@ def get_interview(
 
     return interview
 
+
+# =========================================================
+# UPDATE INTERVIEW
+# =========================================================
 
 @router.put(
     "/{session_id}",
@@ -182,6 +206,10 @@ def update_interview(
         )
 
 
+# =========================================================
+# COMPLETE INTERVIEW
+# =========================================================
+
 @router.post(
     "/{session_id}/complete",
     response_model=InterviewResponse,
@@ -211,6 +239,10 @@ def complete_interview(
             detail=str(exc),
         )
 
+
+# =========================================================
+# ABANDON INTERVIEW
+# =========================================================
 
 @router.post(
     "/{session_id}/abandon",

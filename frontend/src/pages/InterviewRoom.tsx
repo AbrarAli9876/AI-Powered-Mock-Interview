@@ -21,6 +21,12 @@ import {
 } from "../lib/api";
 
 import AIOrb from "../components/interview/AIOrb";
+import {
+  getInterviewCameraStream,
+  getInterviewDisplayStream,
+  stopInterviewSetupMedia,
+} from "../lib/interviewMedia";
+
 
 type RoomState =
   | "loading"
@@ -119,7 +125,7 @@ const [showFullscreenWarning, setShowFullscreenWarning] =
   useState(false);
 
 const [showFullscreenGate, setShowFullscreenGate] =
-  useState(true);
+  useState(() => !document.fullscreenElement);
 
 const [isSecurityTerminated, setIsSecurityTerminated] =
   useState(false);
@@ -153,11 +159,65 @@ useEffect(() => {
   const recognitionRef =
     useRef<SpeechRecognitionLike | null>(null);
 
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const displayVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  const cameraPreviewRef = useRef<HTMLVideoElement | null>(null);
+  const displayPreviewRef = useRef<HTMLVideoElement | null>(null);
+
+  // Attach the streams captured during the setup checklist to the room previews.
+  useEffect(() => {
+    const cameraStream = getInterviewCameraStream();
+    const displayStream = getInterviewDisplayStream();
+
+    if (cameraPreviewRef.current) {
+      cameraPreviewRef.current.srcObject = cameraStream;
+    }
+    if (displayPreviewRef.current) {
+      displayPreviewRef.current.srcObject = displayStream;
+    }
+
+    return () => {
+      if (cameraPreviewRef.current) cameraPreviewRef.current.srcObject = null;
+      if (displayPreviewRef.current) displayPreviewRef.current.srcObject = null;
+    };
+  }, []);
+
   const shouldKeepListeningRef =
     useRef(false);
 
   const speechBaseAnswerRef =
     useRef("");
+
+  /*
+   * ---------------------------------------------------------
+   * Attach camera and screen-share previews from setup.
+   * Streams are stopped when the interview room is left.
+   * ---------------------------------------------------------
+   */
+  useEffect(() => {
+    const cameraStream = getInterviewCameraStream();
+    const displayStream = getInterviewDisplayStream();
+
+    if (cameraVideoRef.current && cameraStream) {
+      cameraVideoRef.current.srcObject = cameraStream;
+      void cameraVideoRef.current.play().catch(() => undefined);
+    }
+
+    if (displayVideoRef.current && displayStream) {
+      displayVideoRef.current.srcObject = displayStream;
+      void displayVideoRef.current.play().catch(() => undefined);
+    }
+
+    return () => {
+      if (cameraVideoRef.current) {
+        cameraVideoRef.current.srcObject = null;
+      }
+      if (displayVideoRef.current) {
+        displayVideoRef.current.srcObject = null;
+      }
+    };
+  }, []);
 
   /*
    * ---------------------------------------------------------
@@ -577,6 +637,7 @@ useEffect(() => {
         );
 
         securityActiveRef.current = false;
+        stopInterviewSetupMedia();
 
         if (document.fullscreenElement) {
           try {
@@ -682,6 +743,7 @@ const terminateForSecurityViolation = useCallback(
 
     securityTerminationRef.current = true;
     securityActiveRef.current = false;
+    stopInterviewSetupMedia();
 
     setIsSecurityTerminated(true);
     setError(reason);
@@ -735,6 +797,8 @@ const terminateForSecurityViolation = useCallback(
         );
 
         securityActiveRef.current = false;
+        stopInterviewSetupMedia();
+        stopInterviewSetupMedia();
 
         if (document.fullscreenElement) {
           try {
@@ -830,85 +894,6 @@ const terminateForSecurityViolation = useCallback(
   isSecurityTerminated,
   terminateForSecurityViolation,
 ]);
-
-  /*
-   * ---------------------------------------------------------
-   * Anti-cheating: block clipboard and context-menu actions.
-   * This applies only to the normal interview room.
-   * ---------------------------------------------------------
-   */
-
-  useEffect(() => {
-    if (
-      !interview ||
-      interview.status !== "in_progress" ||
-      !securityActiveRef.current ||
-      isSecurityTerminated
-    ) {
-      return;
-    }
-
-    const handleClipboard = (event: ClipboardEvent) => {
-      event.preventDefault();
-    };
-
-    const handleContextMenu = (event: MouseEvent) => {
-      event.preventDefault();
-    };
-
-    document.addEventListener("copy", handleClipboard);
-    document.addEventListener("cut", handleClipboard);
-    document.addEventListener("paste", handleClipboard);
-    document.addEventListener("contextmenu", handleContextMenu);
-
-    return () => {
-      document.removeEventListener("copy", handleClipboard);
-      document.removeEventListener("cut", handleClipboard);
-      document.removeEventListener("paste", handleClipboard);
-      document.removeEventListener("contextmenu", handleContextMenu);
-    };
-  }, [
-    interview,
-    isSecurityTerminated,
-  ]);
-
-  /*
-   * ---------------------------------------------------------
-   * Anti-cheating: detect when the candidate leaves the
-   * interview window/application.
-   * ---------------------------------------------------------
-   */
-
-  useEffect(() => {
-    if (
-      !interview ||
-      interview.status !== "in_progress" ||
-      isSecurityTerminated
-    ) {
-      return;
-    }
-
-    const handleWindowBlur = () => {
-      if (!securityActiveRef.current) {
-        return;
-      }
-
-      void terminateForSecurityViolation(
-        "The interview was ended because you left the interview window or switched to another application."
-      );
-    };
-
-    window.addEventListener("blur", handleWindowBlur);
-
-    return () => {
-      window.removeEventListener("blur", handleWindowBlur);
-    };
-  }, [
-    interview,
-    isSecurityTerminated,
-    terminateForSecurityViolation,
-  ]);
-
   /*
    * ---------------------------------------------------------
    * Keyboard shortcut:
@@ -1271,6 +1256,28 @@ const terminateForSecurityViolation = useCallback(
         </section>
 
         {/* =====================================================
+            CAMERA AND SCREEN-SHARE PREVIEWS
+        ====================================================== */}
+        <section className="mt-6 grid gap-4 sm:grid-cols-2" aria-label="Interview media previews">
+          <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.025]">
+            <div className="flex items-center justify-between px-4 py-3">
+              <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-slate-400">Camera preview</span>
+              <span className={`h-2 w-2 rounded-full ${getInterviewCameraStream()?.active ? "bg-emerald-400" : "bg-amber-400"}`} />
+            </div>
+            <video ref={cameraPreviewRef} autoPlay muted playsInline className="aspect-video w-full bg-slate-950 object-cover" aria-label="Camera preview" />
+            {!getInterviewCameraStream()?.active && <p className="px-4 py-3 text-xs text-amber-200/70">Camera stream is not active. Return to setup and allow camera access.</p>}
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.025]">
+            <div className="flex items-center justify-between px-4 py-3">
+              <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-slate-400">Screen-share preview</span>
+              <span className={`h-2 w-2 rounded-full ${getInterviewDisplayStream()?.active ? "bg-emerald-400" : "bg-amber-400"}`} />
+            </div>
+            <video ref={displayPreviewRef} autoPlay muted playsInline className="aspect-video w-full bg-slate-950 object-contain" aria-label="Screen-share preview" />
+            {!getInterviewDisplayStream()?.active && <p className="px-4 py-3 text-xs text-amber-200/70">Screen sharing is not active. Return to setup and share your screen.</p>}
+          </div>
+        </section>
+
+        {/* =====================================================
             MAIN INTERVIEW GRID
         ====================================================== */}
 
@@ -1358,6 +1365,40 @@ const terminateForSecurityViolation = useCallback(
                         ? "Speak naturally. Your answer is being converted to text."
                         : "Take your time and explain your reasoning clearly."}
                 </p>
+              </div>
+
+              {/* Camera and screen-sharing previews */}
+              <div className="mt-7 grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-black/20 p-3 text-left">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-slate-500">Camera</span>
+                    <span className={`h-1.5 w-1.5 rounded-full ${getInterviewCameraStream()?.getVideoTracks().some((track) => track.readyState === "live") ? "bg-emerald-400" : "bg-amber-400"}`} />
+                  </div>
+                  <video
+                    ref={cameraVideoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    aria-label="Camera preview"
+                    className="aspect-video w-full rounded-xl bg-slate-900 object-cover"
+                  />
+                  {!getInterviewCameraStream() && <p className="mt-2 text-[10px] text-amber-200/70">Camera stream is unavailable.</p>}
+                </div>
+                <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-black/20 p-3 text-left">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-slate-500">Shared screen</span>
+                    <span className={`h-1.5 w-1.5 rounded-full ${getInterviewDisplayStream()?.getVideoTracks().some((track) => track.readyState === "live") ? "bg-emerald-400" : "bg-amber-400"}`} />
+                  </div>
+                  <video
+                    ref={displayVideoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    aria-label="Shared screen preview"
+                    className="aspect-video w-full rounded-xl bg-slate-900 object-contain"
+                  />
+                  {!getInterviewDisplayStream() && <p className="mt-2 text-[10px] text-amber-200/70">Screen-sharing stream is unavailable.</p>}
+                </div>
               </div>
 
               {/* Difficulty */}
