@@ -9,9 +9,7 @@ import {
   type Topic,
 } from "../lib/api";
 
-function toNumber(
-  value: number | string | null | undefined,
-): number | null {
+function toNumber(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
@@ -20,9 +18,7 @@ function toNumber(
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function formatScore(
-  value: number | string | null | undefined,
-): string {
+function formatScore(value: number | string | null | undefined): string {
   const score = toNumber(value);
   return score === null ? "—" : score.toFixed(0);
 }
@@ -136,9 +132,7 @@ export default function Dashboard() {
         if (!isMounted) return;
 
         setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to load dashboard.",
+          err instanceof Error ? err.message : "Failed to load dashboard.",
         );
       } finally {
         if (isMounted) {
@@ -165,10 +159,7 @@ export default function Dashboard() {
   }, [topics]);
 
   const completedInterviews = useMemo(
-    () =>
-      interviews.filter(
-        (interview) => interview.status === "completed",
-      ),
+    () => interviews.filter((interview) => interview.status === "completed"),
     [interviews],
   );
 
@@ -198,22 +189,16 @@ export default function Dashboard() {
 
   const averageScore =
     scores.length > 0
-      ? scores.reduce((sum, score) => sum + score, 0) /
-        scores.length
+      ? scores.reduce((sum, score) => sum + score, 0) / scores.length
       : null;
 
-  const bestScore =
-    scores.length > 0 ? Math.max(...scores) : null;
+  const bestScore = scores.length > 0 ? Math.max(...scores) : null;
 
   const latestScore =
-    scoredInterviews.length > 0
-      ? scoredInterviews[0].score
-      : null;
+    scoredInterviews.length > 0 ? scoredInterviews[0].score : null;
 
   const previousScore =
-    scoredInterviews.length > 1
-      ? scoredInterviews[1].score
-      : null;
+    scoredInterviews.length > 1 ? scoredInterviews[1].score : null;
 
   const improvement =
     latestScore !== null && previousScore !== null
@@ -254,6 +239,7 @@ export default function Dashboard() {
         <div className="dashboard-container">
           <div className="dashboard-error">
             <h2>Unable to load dashboard</h2>
+
             <p>{error}</p>
 
             <button
@@ -272,21 +258,30 @@ export default function Dashboard() {
     <div className="dashboard-page">
       <div className="dashboard-container">
         {/* HEADER */}
+        <button
+          type="button"
+          className="dashboard-button"
+          onClick={() => navigate("/home")}
+          style={{ marginBottom: "20px" }}
+        >
+          <span aria-hidden="true">←</span>
+          Back to Home
+        </button>
+
         <header className="dashboard-header">
           <div>
-            <div className="dashboard-eyebrow">
-              PERFORMANCE CENTER
-            </div>
+            <div className="dashboard-eyebrow">PERFORMANCE CENTER</div>
 
             <h1>Your Interview Performance</h1>
 
             <p>
-              Track your progress, review previous interviews, and
-              understand where you can improve.
+              Track your progress, review previous interviews, and understand
+              where you can improve.
             </p>
           </div>
 
           <button
+            type="button"
             className="dashboard-primary-button"
             onClick={() => navigate("/interviews/new")}
           >
@@ -298,9 +293,7 @@ export default function Dashboard() {
         {/* OVERVIEW */}
         <section className="dashboard-overview">
           <div className="dashboard-stat-card">
-            <span className="dashboard-stat-label">
-              TOTAL INTERVIEWS
-            </span>
+            <span className="dashboard-stat-label">TOTAL INTERVIEWS</span>
 
             <strong>{interviews.length}</strong>
 
@@ -310,9 +303,7 @@ export default function Dashboard() {
           </div>
 
           <div className="dashboard-stat-card">
-            <span className="dashboard-stat-label">
-              COMPLETED
-            </span>
+            <span className="dashboard-stat-label">COMPLETED</span>
 
             <strong>{completedInterviews.length}</strong>
 
@@ -322,9 +313,7 @@ export default function Dashboard() {
           </div>
 
           <div className="dashboard-stat-card">
-            <span className="dashboard-stat-label">
-              AVERAGE SCORE
-            </span>
+            <span className="dashboard-stat-label">AVERAGE SCORE</span>
 
             <strong>{formatScore(averageScore)}</strong>
 
@@ -334,9 +323,7 @@ export default function Dashboard() {
           </div>
 
           <div className="dashboard-stat-card">
-            <span className="dashboard-stat-label">
-              BEST SCORE
-            </span>
+            <span className="dashboard-stat-label">BEST SCORE</span>
 
             <strong>{formatScore(bestScore)}</strong>
 
@@ -351,15 +338,11 @@ export default function Dashboard() {
           <section className="dashboard-section">
             <div className="dashboard-section-header">
               <div>
-                <div className="dashboard-eyebrow">
-                  PROGRESS
-                </div>
+                <div className="dashboard-eyebrow">PROGRESS</div>
 
                 <h2>Performance over time</h2>
 
-                <p>
-                  Your interview scores across completed sessions.
-                </p>
+                <p>Your interview scores across completed sessions.</p>
               </div>
 
               {improvement !== null && (
@@ -371,46 +354,35 @@ export default function Dashboard() {
                   }
                 >
                   {improvement >= 0 ? "↑" : "↓"}{" "}
-                  {formatScore(Math.abs(improvement))} points vs
-                  previous
+                  {formatScore(Math.abs(improvement))} points vs previous
                 </div>
               )}
             </div>
 
             <div className="dashboard-chart">
-              {performanceInterviews.map(
-                ({ interview, score }, index) => (
-                  <div
-                    className="dashboard-chart-item"
-                    key={interview.id}
-                  >
-                    <div className="dashboard-chart-value">
-                      {formatScore(score)}
-                    </div>
-
-                    <div className="dashboard-chart-track">
-                      <div
-                        className="dashboard-chart-bar"
-                        style={{
-                          height: `${Math.max(
-                            0,
-                            Math.min(score, 100),
-                          )}%`,
-                          minHeight: "5%",
-                        }}
-                      />
-                    </div>
-
-                    <div className="dashboard-chart-label">
-                      #{index + 1}
-                    </div>
-
-                    <div className="dashboard-chart-date">
-                      {formatDate(interview.created_at)}
-                    </div>
+              {performanceInterviews.map(({ interview, score }, index) => (
+                <div className="dashboard-chart-item" key={interview.id}>
+                  <div className="dashboard-chart-value">
+                    {formatScore(score)}
                   </div>
-                ),
-              )}
+
+                  <div className="dashboard-chart-track">
+                    <div
+                      className="dashboard-chart-bar"
+                      style={{
+                        height: `${Math.max(0, Math.min(score, 100))}%`,
+                        minHeight: "5%",
+                      }}
+                    />
+                  </div>
+
+                  <div className="dashboard-chart-label">#{index + 1}</div>
+
+                  <div className="dashboard-chart-date">
+                    {formatDate(interview.created_at)}
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
         )}
@@ -419,15 +391,11 @@ export default function Dashboard() {
         <section className="dashboard-section">
           <div className="dashboard-section-header">
             <div>
-              <div className="dashboard-eyebrow">
-                INTERVIEW HISTORY
-              </div>
+              <div className="dashboard-eyebrow">INTERVIEW HISTORY</div>
 
               <h2>Your interviews</h2>
 
-              <p>
-                Review every interview in chronological order.
-              </p>
+              <p>Review every interview in chronological order.</p>
             </div>
 
             <span className="dashboard-count">
@@ -443,8 +411,8 @@ export default function Dashboard() {
               <h3>No interviews yet</h3>
 
               <p>
-                Start your first mock interview to begin building
-                your performance history.
+                Start your first mock interview to begin building your
+                performance history.
               </p>
 
               <button
@@ -478,14 +446,10 @@ export default function Dashboard() {
                         <div>
                           <h3>{topicName} Interview</h3>
 
-                          <p>
-                            {formatDateTime(interview.created_at)}
-                          </p>
+                          <p>{formatDateTime(interview.created_at)}</p>
                         </div>
 
-                        <span
-                          className={getStatusClass(interview.status)}
-                        >
+                        <span className={getStatusClass(interview.status)}>
                           {getStatusLabel(interview.status)}
                         </span>
                       </div>
@@ -493,29 +457,29 @@ export default function Dashboard() {
                       <div className="dashboard-interview-meta">
                         <div>
                           <span>STARTING</span>
+
                           <strong>
-                            {getDifficultyLabel(
-                              interview.starting_difficulty,
-                            )}
+                            {getDifficultyLabel(interview.starting_difficulty)}
                           </strong>
                         </div>
 
                         <div>
                           <span>FINAL</span>
+
                           <strong>
-                            {getDifficultyLabel(
-                              interview.current_difficulty,
-                            )}
+                            {getDifficultyLabel(interview.current_difficulty)}
                           </strong>
                         </div>
 
                         <div>
                           <span>QUESTIONS</span>
+
                           <strong>{interview.total_questions}</strong>
                         </div>
 
                         <div>
                           <span>PROGRESS</span>
+
                           <strong>
                             {interview.current_question_number}/
                             {interview.total_questions}
@@ -534,9 +498,7 @@ export default function Dashboard() {
                       {interview.status === "completed" && (
                         <button
                           className="dashboard-view-button"
-                          onClick={() =>
-                            handleInterviewClick(interview)
-                          }
+                          onClick={() => handleInterviewClick(interview)}
                         >
                           View Full Report
                           <span>→</span>
@@ -546,9 +508,7 @@ export default function Dashboard() {
                       {interview.status === "in_progress" && (
                         <button
                           className="dashboard-view-button"
-                          onClick={() =>
-                            handleInterviewClick(interview)
-                          }
+                          onClick={() => handleInterviewClick(interview)}
                         >
                           Continue Interview
                           <span>→</span>

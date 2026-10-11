@@ -1,12 +1,6 @@
-import {
-  Navigate,
-  Route,
-  Routes,
-} from "react-router-dom";
-
+import { Navigate, Route, Routes } from "react-router-dom";
 
 import ProtectedRoute from "./components/ProtectedRoute";
-
 
 import LandingPage from "./pages/LandingPage";
 import Home from "./pages/Home";
@@ -18,6 +12,7 @@ import InterviewResult from "./pages/InterviewResult";
 import Profile from "./pages/Profile";
 
 import InterviewSetup from "./pages/InterviewSetup";
+import InterviewPreflight from "./pages/InterviewPreflight";
 import InterviewRoom from "./pages/InterviewRoom";
 
 import CodingInterviewSetup from "./pages/CodingInterviewSetup";
@@ -25,152 +20,39 @@ import CodingInterviewRoom from "./pages/CodingInterviewRoom";
 
 import AdminDashboard from "./pages/admin/AdminDashboard";
 
-
 function App() {
   return (
     <Routes>
+      {/* Public routes */}
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
 
-      {/* =====================================================
-          PUBLIC ROUTES
-      ====================================================== */}
+      {/* User-protected routes */}
+      <Route element={<ProtectedRoute requiredRole="user" />}>
+        <Route path="/home" element={<Home />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/profile" element={<Profile />} />
 
-      <Route
-        path="/"
-        element={<LandingPage />}
-      />
+        {/* Technical interview setup and mandatory sequential checks */}
+        <Route path="/interviews/new" element={<InterviewSetup />} />
+        <Route path="/interviews/preflight/:step" element={<InterviewPreflight />} />
+        <Route path="/interviews/:sessionId" element={<InterviewRoom />} />
+        <Route path="/interviews/:sessionId/result" element={<InterviewResult />} />
 
-      <Route
-        path="/login"
-        element={<Login />}
-      />
-
-      <Route
-        path="/register"
-        element={<Register />}
-      />
-
-
-      {/* =====================================================
-          USER PROTECTED ROUTES
-      ====================================================== */}
-
-      <Route
-        element={
-          <ProtectedRoute
-            requiredRole="user"
-          />
-        }
-      >
-
-        {/* HOME */}
-
-        <Route
-          path="/home"
-          element={<Home />}
-        />
-
-
-        {/* DASHBOARD */}
-
-        <Route
-          path="/dashboard"
-          element={<Dashboard />}
-        />
-
-
-        {/* PROFILE */}
-
-        <Route
-          path="/profile"
-          element={<Profile />}
-        />
-
-
-        {/* NORMAL INTERVIEW SETUP */}
-
-        <Route
-          path="/interviews/new"
-          element={<InterviewSetup />}
-        />
-
-
-        {/* NORMAL INTERVIEW ROOM */}
-
-        <Route
-          path="/interviews/:sessionId"
-          element={<InterviewRoom />}
-        />
-
-
-        {/* NORMAL INTERVIEW RESULT */}
-
-        <Route
-          path="/interviews/:sessionId/result"
-          element={<InterviewResult />}
-        />
-
-
-        {/* CODING INTERVIEW SETUP */}
-
-        <Route
-          path="/coding-interview/new"
-          element={
-            <CodingInterviewSetup />
-          }
-        />
-
-
-        {/* CODING INTERVIEW ROOM */}
-
-        <Route
-          path="/coding-interview"
-          element={
-            <CodingInterviewRoom />
-          }
-        />
-
+        {/* Coding interview routes are intentionally unchanged */}
+        <Route path="/coding-interview/new" element={<CodingInterviewSetup />} />
+        <Route path="/coding-interview" element={<CodingInterviewRoom />} />
       </Route>
 
-
-      {/* =====================================================
-          ADMIN PROTECTED ROUTES
-      ====================================================== */}
-
-      <Route
-        element={
-          <ProtectedRoute
-            requiredRole="admin"
-          />
-        }
-      >
-
-        <Route
-          path="/admin/dashboard"
-          element={
-            <AdminDashboard />
-          }
-        />
-
+      {/* Admin-protected routes */}
+      <Route element={<ProtectedRoute requiredRole="admin" />}>
+        <Route path="/admin/dashboard" element={<AdminDashboard />} />
       </Route>
 
-
-      {/* =====================================================
-          FALLBACK
-      ====================================================== */}
-
-      <Route
-        path="*"
-        element={
-          <Navigate
-            to="/"
-            replace
-          />
-        }
-      />
-
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
-
 
 export default App;

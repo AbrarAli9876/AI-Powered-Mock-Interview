@@ -2,11 +2,7 @@ from decimal import Decimal
 
 import logging
 
-
-
 from sqlalchemy.orm import Session
-
-
 
 from app.enums.interview_status import InterviewStatus
 
@@ -34,23 +30,13 @@ from app.services.interview_service import InterviewService
 
 from app.services.question_service import QuestionService
 
-
-
-
-
 logger = logging.getLogger(__name__)
-
-
-
-
 
 class InterviewAnswerService:
 
     """
 
     Handles business logic related to interview answers.
-
-
 
     Responsibilities:
 
@@ -74,8 +60,6 @@ class InterviewAnswerService:
 
     """
 
-
-
     def __init__(self, db: Session):
 
         self.db = db
@@ -86,15 +70,11 @@ class InterviewAnswerService:
 
         self.question_service = QuestionService(db)
 
-
-
     # =========================================================
 
     # CREATE ANSWER
 
     # =========================================================
-
-
 
     def create_answer(
 
@@ -106,15 +86,11 @@ class InterviewAnswerService:
 
     ) -> InterviewAnswer:
 
-
-
         # -----------------------------------------------------
 
         # Find interview session
 
         # -----------------------------------------------------
-
-
 
         session = (
 
@@ -132,8 +108,6 @@ class InterviewAnswerService:
 
         )
 
-
-
         if not session:
 
             raise ValueError(
@@ -142,15 +116,11 @@ class InterviewAnswerService:
 
             )
 
-
-
         # -----------------------------------------------------
 
         # Interview must be active
 
         # -----------------------------------------------------
-
-
 
         if session.status != InterviewStatus.IN_PROGRESS:
 
@@ -162,15 +132,11 @@ class InterviewAnswerService:
 
             )
 
-
-
         # -----------------------------------------------------
 
         # There must be an active question
 
         # -----------------------------------------------------
-
-
 
         if session.current_question_id is None:
 
@@ -180,15 +146,11 @@ class InterviewAnswerService:
 
             )
 
-
-
         # -----------------------------------------------------
 
         # Candidate must answer the active question
 
         # -----------------------------------------------------
-
-
 
         if (
 
@@ -204,15 +166,11 @@ class InterviewAnswerService:
 
             )
 
-
-
         # -----------------------------------------------------
 
         # Get question
 
         # -----------------------------------------------------
-
-
 
         question = (
 
@@ -230,8 +188,6 @@ class InterviewAnswerService:
 
         )
 
-
-
         if not question:
 
             raise ValueError(
@@ -240,15 +196,11 @@ class InterviewAnswerService:
 
             )
 
-
-
         # -----------------------------------------------------
 
         # Prevent duplicate answer
 
         # -----------------------------------------------------
-
-
 
         existing_answer = (
 
@@ -266,8 +218,6 @@ class InterviewAnswerService:
 
         )
 
-
-
         if existing_answer:
 
             raise ValueError(
@@ -278,15 +228,11 @@ class InterviewAnswerService:
 
             )
 
-
-
         # -----------------------------------------------------
 
         # Create answer
 
         # -----------------------------------------------------
-
-
 
         answer = InterviewAnswer(
 
@@ -298,21 +244,15 @@ class InterviewAnswerService:
 
         )
 
-
-
         self.db.add(answer)
 
         self.db.flush()
-
-
 
         # -----------------------------------------------------
 
         # Evaluate answer using Gemini
 
         # -----------------------------------------------------
-
-
 
         try:
 
@@ -328,8 +268,6 @@ class InterviewAnswerService:
 
             self.db.rollback()
 
-
-
             logger.exception(
 
                 "Answer evaluation failed for session %s.",
@@ -338,47 +276,46 @@ class InterviewAnswerService:
 
             )
 
-
-
             raise ValueError(
 
                 f"Unable to evaluate the answer: {exc}"
 
             ) from exc
 
+        # -----------------------------------------------------
 
+        # Calculate this answer's overall score from the three
+        # category scores, rather than relying on Gemini's
+        # separately generated overall_score.
 
         # -----------------------------------------------------
 
-        # Gemini must return an overall score
+        category_scores = (
+            answer.technical_score,
+            answer.communication_score,
+            answer.relevance_score,
+        )
 
-        # -----------------------------------------------------
-
-
-
-        if answer.overall_score is None:
-
+        if all(score is not None for score in category_scores):
+            answer.overall_score = (
+                sum(
+                    (Decimal(str(score)) for score in category_scores),
+                    Decimal("0"),
+                )
+                / Decimal("3")
+            ).quantize(Decimal("0.01"))
+        elif answer.overall_score is None:
             self.db.rollback()
-
-
-
             raise ValueError(
-
-                "Answer evaluation did not return "
-
-                "an overall score."
-
+                "Answer evaluation must return an overall score "
+                "or all three category scores."
             )
-
-
 
         # -----------------------------------------------------
 
         # Update adaptive performance
 
         # -----------------------------------------------------
-
-
 
         (
 
@@ -400,25 +337,17 @@ class InterviewAnswerService:
 
         )
 
-
-
         # -----------------------------------------------------
 
         # Update difficulty
 
         # -----------------------------------------------------
 
-
-
         session.current_difficulty = next_difficulty
-
-
 
         session.poor_streak = poor_streak
 
         session.strong_streak = strong_streak
-
-
 
         # -----------------------------------------------------
 
@@ -426,13 +355,11 @@ class InterviewAnswerService:
 
         # -----------------------------------------------------
 
-
-
         # current_question_number counts answered questions.
+
         # total_questions is the configured target for this interview.
+
         session.current_question_number += 1
-
-
 
         # -----------------------------------------------------
 
@@ -440,15 +367,9 @@ class InterviewAnswerService:
 
         # -----------------------------------------------------
 
-
-
         session.current_question_id = None
 
-
-
         self.db.flush()
-
-
 
         # -----------------------------------------------------
 
@@ -456,19 +377,21 @@ class InterviewAnswerService:
 
         # -----------------------------------------------------
 
-
-
         reached_question_limit = (
+
             session.current_question_number >= session.total_questions
+
         )
 
         next_question_exists = (
+
             False
+
             if reached_question_limit
+
             else self._has_unanswered_questions(session=session)
+
         )
-
-
 
         # =====================================================
 
@@ -476,11 +399,7 @@ class InterviewAnswerService:
 
         # =====================================================
 
-
-
         if reached_question_limit or not next_question_exists:
-
-
 
             logger.info(
 
@@ -490,15 +409,11 @@ class InterviewAnswerService:
 
             )
 
-
-
             # -------------------------------------------------
 
             # Calculate final score BEFORE changing status
 
             # -------------------------------------------------
-
-
 
             final_score = self._calculate_overall_score(
 
@@ -506,13 +421,9 @@ class InterviewAnswerService:
 
             )
 
-
-
             if final_score is None:
 
                 self.db.rollback()
-
-
 
                 raise ValueError(
 
@@ -522,33 +433,21 @@ class InterviewAnswerService:
 
                 )
 
-
-
             # -------------------------------------------------
 
             # Mark interview COMPLETED
 
             # -------------------------------------------------
 
-
-
             session.overall_score = final_score
-
-
 
             session.status = InterviewStatus.COMPLETED
 
-
-
             session.current_question_id = None
-
-
 
             session.poor_streak = 0
 
             session.strong_streak = 0
-
-
 
             # -------------------------------------------------
 
@@ -568,17 +467,11 @@ class InterviewAnswerService:
 
             # -------------------------------------------------
 
-
-
             self.db.commit()
-
-
 
             self.db.refresh(session)
 
             self.db.refresh(answer)
-
-
 
             logger.info(
 
@@ -590,8 +483,6 @@ class InterviewAnswerService:
 
             )
 
-
-
             # -------------------------------------------------
 
             # Generate final AI report
@@ -602,8 +493,6 @@ class InterviewAnswerService:
 
             # -------------------------------------------------
 
-
-
             try:
 
                 interview_service = InterviewService(
@@ -612,21 +501,15 @@ class InterviewAnswerService:
 
                 )
 
-
-
                 interview_service.generate_final_report(
 
                     session
 
                 )
 
-
-
                 self.db.commit()
 
                 self.db.refresh(session)
-
-
 
                 logger.info(
 
@@ -635,8 +518,6 @@ class InterviewAnswerService:
                     session.id,
 
                 )
-
-
 
             except Exception:
 
@@ -658,11 +539,7 @@ class InterviewAnswerService:
 
                 # ---------------------------------------------
 
-
-
                 self.db.rollback()
-
-
 
                 logger.exception(
 
@@ -673,8 +550,6 @@ class InterviewAnswerService:
                     session.id,
 
                 )
-
-
 
                 # Reload the already committed interview.
 
@@ -694,13 +569,9 @@ class InterviewAnswerService:
 
                 )
 
-
-
                 if completed_session:
 
                     session = completed_session
-
-
 
             # -------------------------------------------------
 
@@ -708,15 +579,9 @@ class InterviewAnswerService:
 
             # -------------------------------------------------
 
-
-
             self.db.refresh(answer)
 
-
-
             return answer
-
-
 
         # =====================================================
 
@@ -724,27 +589,17 @@ class InterviewAnswerService:
 
         # =====================================================
 
-
-
         self.db.commit()
-
-
 
         self.db.refresh(answer)
 
-
-
         return answer
-
-
 
     # =========================================================
 
     # CHECK FOR UNANSWERED QUESTIONS
 
     # =========================================================
-
-
 
     def _has_unanswered_questions(
 
@@ -760,31 +615,21 @@ class InterviewAnswerService:
 
         remains for the interview.
 
-
-
         The difficulty fallback is:
-
-
 
         EASY:
 
             EASY -> MEDIUM -> HARD
 
-
-
         MEDIUM:
 
             MEDIUM -> HARD -> EASY
-
-
 
         HARD:
 
             HARD -> MEDIUM -> EASY
 
         """
-
-
 
         difficulty_order = {
 
@@ -820,19 +665,13 @@ class InterviewAnswerService:
 
         }
 
-
-
         difficulties = difficulty_order[
 
             session.current_difficulty
 
         ]
 
-
-
         for difficulty in difficulties:
-
-
 
             question = (
 
@@ -848,25 +687,17 @@ class InterviewAnswerService:
 
             )
 
-
-
             if question is not None:
 
                 return True
 
-
-
         return False
-
-
 
     # =========================================================
 
     # CALCULATE OVERALL SCORE
 
     # =========================================================
-
-
 
     def _calculate_overall_score(
 
@@ -878,13 +709,15 @@ class InterviewAnswerService:
 
         """
 
-        Calculate the final average score from all
+        Calculate the final interview score as the average of
 
-        evaluated answers in the interview.
+        the Technical, Communication, and Relevance averages.
+
+        Missing category scores are excluded from their respective
+
+        averages. If all category scores are missing, return None.
 
         """
-
-
 
         answers = (
 
@@ -894,61 +727,71 @@ class InterviewAnswerService:
 
                 InterviewAnswer.session_id == session_id,
 
-                InterviewAnswer.overall_score.isnot(None),
-
             )
 
             .all()
 
         )
 
-
-
         if not answers:
 
             return None
 
+        score_fields = (
 
+            "technical_score",
 
-        total_score = sum(
+            "communication_score",
 
-            Decimal(
-
-                str(answer.overall_score)
-
-            )
-
-            for answer in answers
+            "relevance_score",
 
         )
 
+        category_averages: list[Decimal] = []
 
+        for field in score_fields:
 
-        average_score = (
+            scores = [
 
-            total_score
+                Decimal(str(value))
 
-            / Decimal(len(answers))
+                for answer in answers
+
+                if (value := getattr(answer, field)) is not None
+
+            ]
+
+            if scores:
+
+                category_average = (
+
+                    sum(scores, Decimal("0"))
+
+                    / Decimal(len(scores))
+
+                )
+
+                category_averages.append(category_average)
+
+        if not category_averages:
+
+            return None
+
+        overall_score = (
+
+            sum(category_averages, Decimal("0"))
+
+            / Decimal(len(category_averages))
 
         )
 
-
-
-        return average_score.quantize(
-
-            Decimal("0.01")
-
-        )
-
-
+        return overall_score.quantize(Decimal("0.01"))
 
     # =========================================================
 
     # GET ANSWER BY ID
 
     # =========================================================
-
-
 
     def get_answer_by_id(
 
@@ -959,8 +802,6 @@ class InterviewAnswerService:
         user_id: int,
 
     ) -> InterviewAnswer | None:
-
-
 
         return (
 
@@ -980,15 +821,11 @@ class InterviewAnswerService:
 
         )
 
-
-
     # =========================================================
 
     # GET ALL SESSION ANSWERS
 
     # =========================================================
-
-
 
     def get_session_answers(
 
@@ -999,8 +836,6 @@ class InterviewAnswerService:
         user_id: int,
 
     ) -> list[InterviewAnswer]:
-
-
 
         session = (
 
@@ -1018,8 +853,6 @@ class InterviewAnswerService:
 
         )
 
-
-
         if not session:
 
             raise ValueError(
@@ -1027,8 +860,6 @@ class InterviewAnswerService:
                 "Interview session not found."
 
             )
-
-
 
         return (
 
@@ -1050,15 +881,11 @@ class InterviewAnswerService:
 
         )
 
-
-
     # =========================================================
 
     # UPDATE ANSWER
 
     # =========================================================
-
-
 
     def update_answer(
 
@@ -1072,8 +899,6 @@ class InterviewAnswerService:
 
     ) -> InterviewAnswer:
 
-
-
         answer = self.get_answer_by_id(
 
             answer_id,
@@ -1081,8 +906,6 @@ class InterviewAnswerService:
             user_id,
 
         )
-
-
 
         if not answer:
 
@@ -1092,59 +915,42 @@ class InterviewAnswerService:
 
             )
 
-
-
-        if answer_data.overall_score is not None:
-
-            answer.overall_score = (
-
-                answer_data.overall_score
-
-            )
-
-
-
         if answer_data.technical_score is not None:
-
-            answer.technical_score = (
-
-                answer_data.technical_score
-
-            )
-
-
+            answer.technical_score = answer_data.technical_score
 
         if answer_data.communication_score is not None:
-
-            answer.communication_score = (
-
-                answer_data.communication_score
-
-            )
-
-
+            answer.communication_score = answer_data.communication_score
 
         if answer_data.relevance_score is not None:
+            answer.relevance_score = answer_data.relevance_score
 
-            answer.relevance_score = (
+        # Keep individual answer scores consistent with the same formula.
+        # When all three category scores exist, they take precedence over
+        # any supplied overall_score value.
+        category_scores = (
+            answer.technical_score,
+            answer.communication_score,
+            answer.relevance_score,
+        )
 
-                answer_data.relevance_score
-
-            )
-
-
+        if all(score is not None for score in category_scores):
+            answer.overall_score = (
+                sum(
+                    (Decimal(str(score)) for score in category_scores),
+                    Decimal("0"),
+                )
+                / Decimal("3")
+            ).quantize(Decimal("0.01"))
+        elif answer_data.overall_score is not None:
+            answer.overall_score = answer_data.overall_score
 
         if answer_data.feedback is not None:
 
             answer.feedback = answer_data.feedback
 
-
-
         if answer_data.strengths is not None:
 
             answer.strengths = answer_data.strengths
-
-
 
         if answer_data.improvements is not None:
 
@@ -1154,12 +960,8 @@ class InterviewAnswerService:
 
             )
 
-
-
         self.db.commit()
 
         self.db.refresh(answer)
-
-
 
         return answer
