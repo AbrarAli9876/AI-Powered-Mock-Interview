@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, Text
+from sqlalchemy import Enum, ForeignKey, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.enums.question_difficulty import QuestionDifficulty
@@ -16,16 +16,11 @@ if TYPE_CHECKING:
 
 
 class Question(TimestampMixin, Base):
-    """
-    Database model for interview questions.
-    """
+    """Database model for interview questions."""
 
     __tablename__ = "questions"
 
-    id: Mapped[int] = mapped_column(
-        primary_key=True,
-        autoincrement=True,
-    )
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
     topic_id: Mapped[int] = mapped_column(
         ForeignKey("topics.id"),
@@ -36,10 +31,7 @@ class Question(TimestampMixin, Base):
     difficulty: Mapped[QuestionDifficulty] = mapped_column(
         Enum(
             QuestionDifficulty,
-            values_callable=lambda enum_cls: [
-                member.value
-                for member in enum_cls
-            ],
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
             native_enum=False,
             length=20,
             name="question_difficulty_enum",
@@ -47,21 +39,14 @@ class Question(TimestampMixin, Base):
         nullable=False,
     )
 
-    question_text: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-    )
+    question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_answer: Mapped[str] = mapped_column(Text, nullable=False)
 
-    expected_answer: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-    )
+    # Company attribution from the supplied question bank. Existing questions may
+    # have no company attribution, so this column is nullable.
+    companies: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
 
-    topic: Mapped["Topic"] = relationship(
-        "Topic",
-        back_populates="questions",
-    )
-
+    topic: Mapped["Topic"] = relationship("Topic", back_populates="questions")
     answers: Mapped[list["InterviewAnswer"]] = relationship(
         "InterviewAnswer",
         back_populates="question",
@@ -69,9 +54,6 @@ class Question(TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return (
-            f"<Question("
-            f"id={self.id}, "
-            f"topic_id={self.topic_id}, "
-            f"difficulty='{self.difficulty.value}'"
-            f")>"
+            f"<Question(id={self.id}, topic_id={self.topic_id}, "
+            f"difficulty='{self.difficulty.value}')>"
         )
