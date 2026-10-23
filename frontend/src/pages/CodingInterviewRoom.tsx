@@ -4,6 +4,8 @@ import {
   useState,
 } from "react";
 
+import Editor, { type OnMount } from "@monaco-editor/react";
+
 import {
   useLocation,
   useNavigate,
@@ -1003,19 +1005,55 @@ export default function CodingInterview() {
 
             <div className="relative min-h-[350px] flex-1">
 
-              <textarea
+              <Editor
+                height="100%"
+                language={
+                  interviewState.language === "cpp"
+                    ? "cpp"
+                    : interviewState.language === "javascript"
+                      ? "javascript"
+                      : interviewState.language
+                }
+                theme="vs-dark"
                 value={code}
-                onChange={(event) => {
-                  setCode(event.target.value);
-
+                onChange={(value) => {
+                  setCode(value ?? "");
                   setExecutionResult(null);
                   setSubmitResult(null);
                   setIsSubmitted(false);
                 }}
-                spellCheck={false}
-                disabled={isSubmitted}
-                className="absolute inset-0 h-full w-full resize-none overflow-auto bg-transparent p-5 font-mono text-sm leading-6 text-slate-200 outline-none disabled:cursor-not-allowed disabled:opacity-70"
-                placeholder="Write your solution here..."
+                options={{
+                  readOnly: isSubmitted,
+                  automaticLayout: true,
+                  autoIndent: "full",
+                  formatOnPaste: true,
+                  formatOnType: true,
+                  detectIndentation: true,
+                  insertSpaces: true,
+                  tabSize: 4,
+                  bracketPairColorization: { enabled: true },
+                  guides: {
+                    indentation: true,
+                    bracketPairs: true,
+                  },
+                  minimap: { enabled: false },
+                  fontSize: 14,
+                  lineHeight: 24,
+                  fontFamily: '"Cascadia Code", "Fira Code", Consolas, monospace',
+                  wordWrap: "on",
+                  scrollBeyondLastLine: false,
+                  padding: { top: 16, bottom: 16 },
+                  renderLineHighlight: "line",
+                  scrollbar: {
+                    verticalScrollbarSize: 10,
+                    horizontalScrollbarSize: 10,
+                  },
+                }}
+                loading={
+                  <div className="flex h-full items-center justify-center bg-[#1e1e1e] text-sm text-slate-400">
+                    Loading code editor...
+                  </div>
+                }
               />
 
             </div>
