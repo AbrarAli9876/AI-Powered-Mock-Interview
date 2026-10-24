@@ -3,7 +3,7 @@ import {
   useMemo,
   useState,
 } from "react";
-
+import Editor from "@monaco-editor/react";
 import {
   useLocation,
   useNavigate,
@@ -15,6 +15,7 @@ import {
   getCodingInterviewResult,
   getCurrentCodingQuestion,
   getNextCodingQuestion,
+  skipCodingQuestion,
   runCode,
   submitCodingAnswer,
   type CodingInterview,
@@ -25,34 +26,20 @@ import {
   type CodeExecutionResponse,
   type Difficulty,
 } from "../lib/api";
-
-
-/* =========================================================
-   TYPES
-   ========================================================= */
+import {
+  getInterviewCameraStream,
+  getInterviewDisplayStream,
+  stopInterviewSetupMedia,
+} from "../lib/interviewMedia";
 
 interface CodingInterviewState {
   sessionId?: number;
-
   language: CodingLanguage;
-
   difficulty: Difficulty;
-
   questionCount?: number;
 
-  /*
-   * Kept temporarily for backward compatibility with the
-   * previous setup page.
-   *
-   * The actual interview now comes from the backend session.
-   */
   questions?: CodingQuestion[];
 }
-
-
-/* =========================================================
-   LABELS
-   ========================================================= */
 
 const LANGUAGE_LABELS: Record<
   CodingLanguage,
@@ -64,7 +51,6 @@ const LANGUAGE_LABELS: Record<
   cpp: "C++",
 };
 
-
 const DIFFICULTY_LABELS: Record<
   Difficulty,
   string
@@ -73,11 +59,6 @@ const DIFFICULTY_LABELS: Record<
   medium: "Medium",
   hard: "Hard",
 };
-
-
-/* =========================================================
-   EXAMPLES FORMATTER
-   ========================================================= */
 
 function formatExamples(
   examples: string,
@@ -135,34 +116,18 @@ function formatExamples(
   }
 }
 
-
-/* =========================================================
-   MAIN COMPONENT
-   ========================================================= */
-
 export default function CodingInterview() {
   const navigate = useNavigate();
 
   const location = useLocation();
-
-
-  /* =======================================================
-     INTERVIEW STATE
-     ======================================================= */
 
   const interviewState =
     location.state as
       | CodingInterviewState
       | null;
 
-
   const initialSessionId =
     interviewState?.sessionId;
-
-
-  /* =======================================================
-     SESSION
-     ======================================================= */
 
   const [
     sessionId,
@@ -171,14 +136,12 @@ export default function CodingInterview() {
     initialSessionId ?? null,
   );
 
-
   const [
     interview,
     setInterview,
   ] = useState<CodingInterview | null>(
     null,
   );
-
 
   const [
     currentQuestionData,
@@ -187,30 +150,18 @@ export default function CodingInterview() {
     CodingInterviewQuestionResponse | null
   >(null);
 
-
   const currentQuestion =
     currentQuestionData?.question ?? null;
-
-
-  /* =======================================================
-     CODE
-     ======================================================= */
 
   const [
     code,
     setCode,
   ] = useState("");
 
-
-  /* =======================================================
-     EXECUTION
-     ======================================================= */
-
   const [
     isRunning,
     setIsRunning,
   ] = useState(false);
-
 
   const [
     executionResult,
@@ -219,22 +170,22 @@ export default function CodingInterview() {
     CodeExecutionResponse | null
   >(null);
 
-
-  /* =======================================================
-     SUBMISSION
-     ======================================================= */
+  const allTestsPassed =
+    executionResult !== null &&
+    executionResult.success &&
+    executionResult.total_test_cases > 0 &&
+    executionResult.passed_test_cases ===
+      executionResult.total_test_cases;
 
   const [
     isSubmitting,
     setIsSubmitting,
   ] = useState(false);
 
-
   const [
     isSubmitted,
     setIsSubmitted,
   ] = useState(false);
-
 
   const [
     submitResult,
@@ -247,56 +198,30 @@ export default function CodingInterview() {
     isLastQuestion: boolean;
   } | null>(null);
 
-
-  /* =======================================================
-     LOADING
-     ======================================================= */
-
   const [
     isLoading,
     setIsLoading,
   ] = useState(true);
-
 
   const [
     isLoadingNext,
     setIsLoadingNext,
   ] = useState(false);
 
-
-  /* =======================================================
-     ERROR
-     ======================================================= */
-
   const [
     error,
     setError,
   ] = useState<string | null>(null);
-
-
-  /* =======================================================
-     EXIT MODAL
-     ======================================================= */
 
   const [
     showExitConfirmation,
     setShowExitConfirmation,
   ] = useState(false);
 
-
-  /* =======================================================
-     FINAL RESULT
-     ======================================================= */
-
   const [
     isLoadingResult,
     setIsLoadingResult,
   ] = useState(false);
-
-
-  /* =======================================================
-     EXAMPLES
-     ======================================================= */
 
   const examples = useMemo(
     () =>
@@ -307,11 +232,6 @@ export default function CodingInterview() {
         : [],
     [currentQuestion],
   );
-
-
-  /* =========================================================
-     INITIAL SESSION
-     ========================================================= */
 
   useEffect(() => {
     if (!interviewState) {
@@ -338,18 +258,11 @@ export default function CodingInterview() {
     navigate,
   ]);
 
-
-  /* =========================================================
-     LOAD INTERVIEW SESSION
-     ========================================================= */
-
   useEffect(() => {
     if (sessionId === null) {
       return;
     }
 
-    // Capture the narrowed value so TypeScript knows it is a number
-    // inside the async function/Promise.all closure.
     const id = sessionId;
 
     let cancelled = false;
@@ -422,11 +335,6 @@ export default function CodingInterview() {
     };
   }, [sessionId]);
 
-
-  /* =========================================================
-     LOAD STARTER CODE WHEN QUESTION CHANGES
-     ========================================================= */
-
   useEffect(() => {
     if (!currentQuestion) {
       return;
@@ -451,11 +359,6 @@ export default function CodingInterview() {
   }, [
     currentQuestion?.id,
   ]);
-
-
-  /* =========================================================
-     RUN CODE
-     ========================================================= */
 
   async function handleRunCode() {
     if (!currentQuestion) {
@@ -499,11 +402,6 @@ export default function CodingInterview() {
     }
   }
 
-
-  /* =========================================================
-     SUBMIT SOLUTION
-     ========================================================= */
-
   async function handleSubmit() {
     if (!sessionId) {
       setError(
@@ -520,6 +418,14 @@ export default function CodingInterview() {
     if (!code.trim()) {
       setError(
         "Please write some code before submitting.",
+      );
+
+      return;
+    }
+
+    if (!allTestsPassed) {
+      setError(
+        "Please run your code and pass all test cases before submitting.",
       );
 
       return;
@@ -559,11 +465,6 @@ export default function CodingInterview() {
 
       setIsSubmitted(true);
 
-
-      /*
-       * Update local interview state.
-       */
-
       setInterview(
         (previous) =>
           previous
@@ -576,13 +477,6 @@ export default function CodingInterview() {
             : previous,
       );
 
-
-      /*
-       * If this was the final question,
-       * the backend automatically completes
-       * the interview.
-       */
-
       if (result.is_last_question) {
         setIsLoadingResult(true);
 
@@ -592,10 +486,11 @@ export default function CodingInterview() {
           );
 
         navigate(
-          "/coding-interview/result",
+          `/coding-interview/results/${encodeURIComponent(String(sessionId))}`,
           {
             state: {
               result: finalResult,
+              sessionId,
             },
           },
         );
@@ -614,11 +509,6 @@ export default function CodingInterview() {
       setIsLoadingResult(false);
     }
   }
-
-
-  /* =========================================================
-     NEXT QUESTION
-     ========================================================= */
 
   async function handleNextQuestion() {
     if (!sessionId) {
@@ -672,12 +562,6 @@ export default function CodingInterview() {
 
       setIsSubmitted(false);
 
-
-      /*
-       * Refresh interview session
-       * so the question counter is accurate.
-       */
-
       const updatedInterview =
         await getCodingInterview(
           sessionId,
@@ -697,10 +581,69 @@ export default function CodingInterview() {
     }
   }
 
+  /**
+   * Release the interview camera and screen share and leave fullscreen.
+   * Called only when the candidate finishes or voluntarily exits the interview.
+   */
+  async function releaseInterviewMedia() {
+    const camera = getInterviewCameraStream();
+    const display = getInterviewDisplayStream();
 
-  /* =========================================================
-     KEYBOARD SHORTCUT
-     ========================================================= */
+    try {
+      camera?.getTracks().forEach((track) => track.stop());
+      display?.getTracks().forEach((track) => track.stop());
+    } finally {
+      stopInterviewSetupMedia();
+
+      try {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        }
+      } catch {
+        // The browser may already have exited fullscreen.
+      }
+    }
+  }
+
+  async function handleSkipQuestion() {
+    if (!sessionId || !currentQuestion) {
+      setError("Interview session not found.");
+      return;
+    }
+
+    if (isSubmitted || isSubmitting || isLoadingNext || isRunning) {
+      return;
+    }
+
+    try {
+      setError(null);
+      setIsLoadingNext(true);
+      const response = await skipCodingQuestion(sessionId);
+
+      if (response.is_last_question || !response.next_question) {
+        const finalResult = await getCodingInterviewResult(sessionId);
+        await releaseInterviewMedia();
+        navigate(
+          `/coding-interview/results/${encodeURIComponent(String(sessionId))}`,
+          { state: { result: finalResult, sessionId } },
+        );
+        return;
+      }
+
+      const nextQuestion = response.next_question;
+      setCurrentQuestionData(nextQuestion);
+      setCode(nextQuestion.question.starter_code || "");
+      setExecutionResult(null);
+      setSubmitResult(null);
+      setIsSubmitted(false);
+      const updatedInterview = await getCodingInterview(sessionId);
+      setInterview(updatedInterview);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to skip this question.");
+    } finally {
+      setIsLoadingNext(false);
+    }
+  }
 
   useEffect(() => {
     function handleKeyboard(
@@ -732,36 +675,41 @@ export default function CodingInterview() {
     currentQuestion,
   ]);
 
-
-  /* =========================================================
-     EXIT INTERVIEW
-     ========================================================= */
-
   async function handleExit() {
     if (!sessionId) {
+      await releaseInterviewMedia();
       navigate("/home");
-
       return;
     }
 
     try {
-      await abandonCodingInterview(
-        sessionId,
-      );
+      await abandonCodingInterview(sessionId);
+      let finalResult: CodingInterviewResult | null = null;
+
+      try {
+        finalResult = await getCodingInterviewResult(sessionId);
+      } catch {
+        // If the report cannot be loaded, still allow the candidate to leave.
+      }
+
+      await releaseInterviewMedia();
+
+      if (finalResult) {
+        navigate(
+          `/coding-interview/results/${encodeURIComponent(String(sessionId))}`,
+          { state: { result: finalResult, sessionId } },
+        );
+      } else {
+        navigate("/home");
+      }
+      return;
     } catch {
-      /*
-       * Even if the backend request fails,
-       * allow the candidate to leave.
-       */
+      // Still release media and allow the candidate to leave if saving fails.
     }
 
+    await releaseInterviewMedia();
     navigate("/home");
   }
-
-
-  /* =========================================================
-     LOADING STATE
-     ========================================================= */
 
   if (
     isLoading ||
@@ -781,11 +729,6 @@ export default function CodingInterview() {
       </div>
     );
   }
-
-
-  /* =========================================================
-     INVALID SESSION
-     ========================================================= */
 
   if (
     !sessionId ||
@@ -827,17 +770,11 @@ export default function CodingInterview() {
     );
   }
 
-
-  /* =========================================================
-     VALUES
-     ========================================================= */
-
   const questionNumber =
     currentQuestionData
       ?.question_number ??
     interview?.current_question_number ??
     1;
-
 
   const totalQuestions =
     currentQuestionData
@@ -846,32 +783,10 @@ export default function CodingInterview() {
     interviewState.questionCount ??
     0;
 
-
-  const visibleTestCases =
-    (
-      currentQuestion.test_cases ??
-      []
-    )
-      .filter(
-        (testCase) =>
-          !testCase.is_hidden,
-      )
-      .slice(0, 3);
-
-
-  /* =========================================================
-     RENDER
-     ========================================================= */
-
   return (
     <div className="app-background min-h-screen text-white">
 
       <div className="app-grid" />
-
-
-      {/* =====================================================
-          HEADER
-      ====================================================== */}
 
       <header className="relative z-20 border-b border-white/[0.06] bg-black/20 backdrop-blur-xl">
 
@@ -890,7 +805,6 @@ export default function CodingInterview() {
             >
               ← Exit
             </button>
-
 
             <div>
 
@@ -913,7 +827,6 @@ export default function CodingInterview() {
 
           </div>
 
-
           <div className="flex items-center gap-3">
 
             <span className="rounded-full border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-1 text-xs text-cyan-300">
@@ -925,7 +838,6 @@ export default function CodingInterview() {
               }
 
             </span>
-
 
             <span className="rounded-full border border-violet-400/20 bg-violet-400/[0.06] px-3 py-1 text-xs text-violet-300">
 
@@ -943,11 +855,6 @@ export default function CodingInterview() {
 
       </header>
 
-
-      {/* =====================================================
-          ERROR
-      ====================================================== */}
-
       {error && (
 
         <div className="relative z-20 border-b border-rose-400/20 bg-rose-400/[0.05] px-5 py-3">
@@ -960,19 +867,9 @@ export default function CodingInterview() {
 
       )}
 
-
-      {/* =====================================================
-          MAIN
-      ====================================================== */}
-
       <main className="relative z-10 mx-auto max-w-[1600px] px-4 py-5 lg:px-6">
 
         <div className="grid min-h-[calc(100vh-130px)] gap-5 lg:grid-cols-2">
-
-
-          {/* =================================================
-              LEFT SIDE
-          ================================================== */}
 
           <section className="glass-panel flex min-h-[650px] flex-col overflow-hidden rounded-2xl">
 
@@ -988,13 +885,7 @@ export default function CodingInterview() {
 
             </div>
 
-
             <div className="flex-1 overflow-y-auto px-6 py-6">
-
-
-              {/* =================================================
-                  PROBLEM STATEMENT
-              ================================================== */}
 
               <h2 className="mb-3 text-sm font-semibold text-white">
                 Problem Statement
@@ -1006,17 +897,11 @@ export default function CodingInterview() {
                 }
               </div>
 
-
-              {/* =================================================
-                  HINTS
-              ================================================== */}
-
               <div className="mt-8">
 
                 <h2 className="mb-3 text-sm font-semibold text-white">
                   💡 Hints
                 </h2>
-
 
                 <div className="space-y-3">
 
@@ -1031,7 +916,6 @@ export default function CodingInterview() {
                     </p>
 
                   </div>
-
 
                   <div className="rounded-xl border border-amber-400/10 bg-amber-400/[0.04] p-4">
 
@@ -1049,11 +933,6 @@ export default function CodingInterview() {
 
               </div>
 
-
-              {/* =================================================
-                  INPUT FORMAT
-              ================================================== */}
-
               <div className="mt-8">
 
                 <h2 className="mb-3 text-sm font-semibold text-white">
@@ -1067,11 +946,6 @@ export default function CodingInterview() {
                 </div>
 
               </div>
-
-
-              {/* =================================================
-                  OUTPUT FORMAT
-              ================================================== */}
 
               <div className="mt-6">
 
@@ -1087,11 +961,6 @@ export default function CodingInterview() {
 
               </div>
 
-
-              {/* =================================================
-                  CONSTRAINTS
-              ================================================== */}
-
               <div className="mt-6">
 
                 <h2 className="mb-3 text-sm font-semibold text-white">
@@ -1105,11 +974,6 @@ export default function CodingInterview() {
                 </div>
 
               </div>
-
-
-              {/* =================================================
-                  EXAMPLES
-              ================================================== */}
 
               <div className="mt-6">
 
@@ -1143,7 +1007,6 @@ export default function CodingInterview() {
                             {index + 1}
                           </p>
 
-
                           <div className="grid gap-4 md:grid-cols-2">
 
                             <div>
@@ -1157,7 +1020,6 @@ export default function CodingInterview() {
                               </pre>
 
                             </div>
-
 
                             <div>
 
@@ -1184,112 +1046,11 @@ export default function CodingInterview() {
 
               </div>
 
-
-              {/* =================================================
-                  TEST CASES
-              ================================================== */}
-
-              <div className="mt-8">
-
-                <div className="flex items-center justify-between">
-
-                  <h2 className="text-sm font-semibold text-white">
-                    🧪 Test Cases
-                  </h2>
-
-                  <span className="text-[10px] text-slate-600">
-                    {visibleTestCases.length} visible
-                  </span>
-
-                </div>
-
-
-                <div className="mt-3 space-y-3">
-
-                  {visibleTestCases.length === 0 ? (
-
-                    <div className="rounded-xl border border-white/[0.06] bg-black/20 p-4 text-xs text-slate-500">
-                      No visible test cases available.
-                    </div>
-
-                  ) : (
-
-                    visibleTestCases.map(
-                      (
-                        testCase,
-                        index,
-                      ) => (
-
-                        <div
-                          key={testCase.id}
-                          className="rounded-xl border border-white/[0.06] bg-black/20 p-4"
-                        >
-
-                          <p className="mb-3 font-mono text-[9px] uppercase tracking-[0.15em] text-slate-600">
-                            Test Case{" "}
-                            {index + 1}
-                          </p>
-
-
-                          <div className="grid gap-4 md:grid-cols-2">
-
-                            <div>
-
-                              <p className="mb-2 text-[10px] uppercase tracking-wider text-slate-600">
-                                Input
-                              </p>
-
-                              <pre className="whitespace-pre-wrap font-mono text-xs text-slate-400">
-                                {
-                                  testCase.input_data
-                                }
-                              </pre>
-
-                            </div>
-
-
-                            <div>
-
-                              <p className="mb-2 text-[10px] uppercase tracking-wider text-slate-600">
-                                Expected Output
-                              </p>
-
-                              <pre className="whitespace-pre-wrap font-mono text-xs text-slate-400">
-                                {
-                                  testCase.expected_output
-                                }
-                              </pre>
-
-                            </div>
-
-                          </div>
-
-                        </div>
-
-                      ),
-                    )
-
-                  )}
-
-                </div>
-
-              </div>
-
             </div>
 
           </section>
 
-
-          {/* =================================================
-              RIGHT SIDE
-          ================================================== */}
-
           <section className="flex min-h-[650px] flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0a0a0f]">
-
-
-            {/* =================================================
-                EDITOR HEADER
-            ================================================== */}
 
             <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02] px-4 py-3">
 
@@ -1304,7 +1065,6 @@ export default function CodingInterview() {
                   <span className="h-2.5 w-2.5 rounded-full bg-green-400/60" />
 
                 </div>
-
 
                 <span className="font-mono text-xs text-slate-500">
 
@@ -1325,39 +1085,68 @@ export default function CodingInterview() {
 
               </div>
 
-
               <span className="text-xs text-slate-600">
                 Ctrl + Enter to run
               </span>
 
             </div>
 
-
-            {/* =================================================
-                TEXT EDITOR
-            ================================================== */}
-
             <div className="relative min-h-[350px] flex-1">
 
-              <textarea
-                value={code}
-                onChange={(event) =>
-                  setCode(
-                    event.target.value,
-                  )
+              <Editor
+                height="100%"
+                language={
+                  interviewState.language === "javascript"
+                    ? "javascript"
+                    : interviewState.language === "python"
+                      ? "python"
+                      : interviewState.language === "java"
+                        ? "java"
+                        : "cpp"
                 }
-                spellCheck={false}
-                disabled={isSubmitted}
-                className="absolute inset-0 h-full w-full resize-none overflow-auto bg-transparent p-5 font-mono text-sm leading-6 text-slate-200 outline-none disabled:cursor-not-allowed disabled:opacity-70"
-                placeholder="Write your solution here..."
+                theme="vs-dark"
+                value={code}
+                onChange={(value) => {
+                  setCode(value ?? "");
+
+                  setExecutionResult(null);
+                  setSubmitResult(null);
+                  setIsSubmitted(false);
+                }}
+                options={{
+                  readOnly: isSubmitted,
+                  automaticLayout: true,
+                  minimap: { enabled: false },
+                  fontSize: 14,
+                  lineHeight: 24,
+                  fontFamily: "Consolas, 'Courier New', monospace",
+                  tabSize: interviewState.language === "python" ? 4 : 2,
+                  insertSpaces: true,
+                  detectIndentation: false,
+                  autoIndent: "full",
+                  formatOnPaste: true,
+                  formatOnType: true,
+                  wordWrap: "on",
+                  scrollBeyondLastLine: false,
+                  padding: {
+                    top: 18,
+                    bottom: 18,
+                  },
+                  suggestOnTriggerCharacters: true,
+                  quickSuggestions: true,
+                  scrollbar: {
+                    verticalScrollbarSize: 10,
+                    horizontalScrollbarSize: 10,
+                  },
+                }}
+                loading={
+                  <div className="p-5 font-mono text-sm text-slate-500">
+                    Loading code editor...
+                  </div>
+                }
               />
 
             </div>
-
-
-            {/* =================================================
-                TEST RESULTS
-            ================================================== */}
 
             <div className="border-t border-white/[0.06]">
 
@@ -1370,7 +1159,6 @@ export default function CodingInterview() {
                     <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-600">
                       Test Results
                     </p>
-
 
                     {executionResult && (
 
@@ -1395,7 +1183,6 @@ export default function CodingInterview() {
 
                   </div>
 
-
                   {executionResult && (
 
                     <span
@@ -1418,13 +1205,13 @@ export default function CodingInterview() {
 
               </div>
 
-
               <div className="max-h-64 overflow-y-auto px-4 py-4">
 
                 {!executionResult ? (
 
                   <div className="rounded-lg border border-white/[0.05] bg-white/[0.015] px-4 py-4 text-xs text-slate-600">
-                    Run your code to see test results.
+                    Run your code to validate all test cases. Submission
+                    will be enabled only when every test case passes.
                   </div>
 
                 ) : (
@@ -1454,7 +1241,6 @@ export default function CodingInterview() {
                               }
                             </span>
 
-
                             <span
                               className={`text-[10px] font-semibold uppercase tracking-[0.1em] ${
                                 result.passed
@@ -1470,7 +1256,6 @@ export default function CodingInterview() {
                             </span>
 
                           </div>
-
 
                           <div className="mt-3 grid gap-4 md:grid-cols-3">
 
@@ -1488,7 +1273,6 @@ export default function CodingInterview() {
 
                             </div>
 
-
                             <div>
 
                               <p className="mb-1 text-[10px] uppercase tracking-wider text-slate-600">
@@ -1502,7 +1286,6 @@ export default function CodingInterview() {
                               </pre>
 
                             </div>
-
 
                             <div>
 
@@ -1521,7 +1304,6 @@ export default function CodingInterview() {
 
                           </div>
 
-
                           {result.error && (
 
                             <div className="mt-3 rounded-lg bg-rose-400/[0.05] p-3">
@@ -1539,7 +1321,6 @@ export default function CodingInterview() {
                             </div>
 
                           )}
-
 
                           {result.execution_time_ms !==
                             null && (
@@ -1570,11 +1351,6 @@ export default function CodingInterview() {
               </div>
 
             </div>
-
-
-            {/* =================================================
-                SUBMISSION RESULT
-            ================================================== */}
 
             {submitResult && (
 
@@ -1614,7 +1390,6 @@ export default function CodingInterview() {
 
                     </div>
 
-
                     {submitResult.score !==
                       undefined && (
 
@@ -1634,11 +1409,6 @@ export default function CodingInterview() {
 
             )}
 
-
-            {/* =================================================
-                ACTIONS
-            ================================================== */}
-
             <div className="flex items-center justify-between border-t border-white/[0.06] bg-white/[0.015] px-4 py-4">
 
               <div>
@@ -1651,10 +1421,18 @@ export default function CodingInterview() {
 
               </div>
 
-
               <div className="flex gap-3">
 
-                {/* RUN */}
+                {!isSubmitted && (
+                  <button
+                    type="button"
+                    onClick={handleSkipQuestion}
+                    disabled={isRunning || isSubmitting || isLoadingNext}
+                    className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2.5 text-xs font-semibold text-slate-300 transition hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isLoadingNext ? "Moving..." : "Skip Question →"}
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -1673,9 +1451,6 @@ export default function CodingInterview() {
                     : "▶ Run Code"}
                 </button>
 
-
-                {/* SUBMIT */}
-
                 {!isSubmitted && (
 
                   <button
@@ -1685,19 +1460,23 @@ export default function CodingInterview() {
                     }
                     disabled={
                       isRunning ||
-                      isSubmitting
+                      isSubmitting ||
+                      !allTestsPassed
                     }
-                    className="rounded-lg bg-emerald-500 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                    className={`rounded-lg px-5 py-2.5 text-xs font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50 ${
+                      allTestsPassed
+                        ? "bg-emerald-500 shadow-emerald-500/20 hover:bg-emerald-400"
+                        : "bg-slate-700/60 shadow-none"
+                    }`}
                   >
                     {isSubmitting
                       ? "Submitting..."
-                      : "✓ Submit Solution"}
+                      : allTestsPassed
+                        ? "✓ Submit Solution"
+                        : "✓ Pass All Tests to Submit"}
                   </button>
 
                 )}
-
-
-                {/* NEXT */}
 
                 {isSubmitted &&
                   !submitResult?.isLastQuestion && (
@@ -1719,9 +1498,6 @@ export default function CodingInterview() {
 
                 )}
 
-
-                {/* FINAL RESULT */}
-
                 {isSubmitted &&
                   submitResult?.isLastQuestion && (
 
@@ -1742,11 +1518,14 @@ export default function CodingInterview() {
                             sessionId,
                           );
 
+                        await releaseInterviewMedia();
+
                         navigate(
-                          "/coding-interview/result",
+                          `/coding-interview/results/${encodeURIComponent(String(sessionId))}`,
                           {
                             state: {
                               result,
+                              sessionId,
                             },
                           },
                         );
@@ -1784,11 +1563,6 @@ export default function CodingInterview() {
 
       </main>
 
-
-      {/* =====================================================
-          EXIT MODAL
-      ====================================================== */}
-
       {showExitConfirmation && (
 
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6 backdrop-blur-sm">
@@ -1799,18 +1573,14 @@ export default function CodingInterview() {
               Leave Interview
             </p>
 
-
             <h2 className="mt-3 text-xl font-semibold text-white">
-              Exit coding interview?
+              End coding interview?
             </h2>
-
 
             <p className="mt-3 text-sm leading-6 text-slate-400">
               Your current code will not be submitted.
-              Leaving the interview will mark this
-              coding interview as abandoned.
+              Ending now will save your progress and open your coding interview result.
             </p>
-
 
             <div className="mt-7 flex justify-end gap-3">
 
@@ -1826,7 +1596,6 @@ export default function CodingInterview() {
                 Continue
               </button>
 
-
               <button
                 type="button"
                 onClick={
@@ -1834,7 +1603,7 @@ export default function CodingInterview() {
                 }
                 className="rounded-lg bg-rose-500 px-4 py-2.5 text-xs font-semibold text-white hover:bg-rose-400"
               >
-                Exit Interview
+                End Interview
               </button>
 
             </div>

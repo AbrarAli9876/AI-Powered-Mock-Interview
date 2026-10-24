@@ -6,3 +6,4 @@ class CodingLanguage(str, Enum):
     JAVASCRIPT = "javascript"
     JAVA = "java"
     CPP = "cpp"
+    SQL = "sql"

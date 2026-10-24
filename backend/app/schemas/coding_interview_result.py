@@ -50,6 +50,12 @@ class CodingInterviewResultResponse(BaseModel):
 
     attempted_questions: int
 
+    solved_questions: int = 0
+
+    unanswered_questions: int = 0
+
+    skipped_questions: int = 0
+
     total_test_cases: int
 
     passed_test_cases: int

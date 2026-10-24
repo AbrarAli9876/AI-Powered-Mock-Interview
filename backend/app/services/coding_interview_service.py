@@ -44,6 +44,18 @@ class CodingInterviewService:
         self.db = db
 
     # =========================================================
+    # LIST USER CODING INTERVIEWS (RECENT HISTORY)
+    # =========================================================
+
+    def get_user_interviews(self, user_id: int) -> list[CodingInterviewSession]:
+        return (
+            self.db.query(CodingInterviewSession)
+            .filter(CodingInterviewSession.user_id == user_id)
+            .order_by(CodingInterviewSession.created_at.desc())
+            .all()
+        )
+
+    # =========================================================
     # START CODING INTERVIEW
     # =========================================================
 
@@ -299,6 +311,80 @@ class CodingInterviewService:
         )
 
     # =========================================================
+    # SKIP CURRENT QUESTION
+    # =========================================================
+
+    def skip_current_question(
+        self,
+        session_id: int,
+        user_id: int,
+    ) -> dict:
+        """Mark the current question as skipped and advance.
+
+        The existing ``answered`` flag is used as a processed flag here:
+        a skipped question is marked processed, but has no answer record.
+        The result calculation distinguishes the two using answer records.
+        """
+        session = self.get_interview(
+            session_id=session_id,
+            user_id=user_id,
+        )
+
+        if session.status != InterviewStatus.IN_PROGRESS:
+            raise ValueError("Coding interview is no longer in progress.")
+
+        current = (
+            self.db.query(CodingInterviewQuestion)
+            .filter(
+                CodingInterviewQuestion.session_id == session.id,
+                CodingInterviewQuestion.question_number == session.current_question_number,
+            )
+            .first()
+        )
+
+        if not current:
+            raise ValueError("Current coding interview question was not found.")
+
+        # A submitted question cannot be skipped retroactively.
+        existing_answer = (
+            self.db.query(CodingInterviewAnswer)
+            .filter(
+                CodingInterviewAnswer.session_id == session.id,
+                CodingInterviewAnswer.question_number == current.question_number,
+            )
+            .first()
+        )
+        if existing_answer:
+            raise ValueError("This question has already been submitted.")
+
+        current.answered = True
+        question_number = current.question_number
+        is_last_question = question_number >= session.total_questions
+
+        if is_last_question:
+            session.status = InterviewStatus.COMPLETED
+            self.db.commit()
+            return {
+                "is_last_question": True,
+                "question_number": question_number,
+                "next_question": None,
+            }
+
+        session.current_question_number += 1
+        self.db.commit()
+        self.db.refresh(session)
+
+        next_question = self.get_current_question(
+            session_id=session.id,
+            user_id=user_id,
+        )
+        return {
+            "is_last_question": False,
+            "question_number": question_number,
+            "next_question": next_question,
+        }
+
+    # =========================================================
     # SUBMIT CODING ANSWER
     # =========================================================
 
@@ -501,28 +587,8 @@ class CodingInterviewService:
                 "can be completed."
             )
 
-        # -----------------------------------------------------
-        # Check that all questions have been answered
-        # -----------------------------------------------------
-
-        unanswered_count = (
-            self.db.query(CodingInterviewQuestion)
-            .filter(
-                CodingInterviewQuestion.session_id
-                == session.id,
-                CodingInterviewQuestion.answered.is_(
-                    False
-                ),
-            )
-            .count()
-        )
-
-        if unanswered_count > 0:
-            raise ValueError(
-                "You must answer all coding interview "
-                "questions before completing the interview."
-            )
-
+        # Completing early is allowed. The result report records
+        # attempted and unanswered questions separately.
         session.status = InterviewStatus.COMPLETED
 
         self.db.commit()
@@ -579,9 +645,9 @@ class CodingInterviewService:
             user_id=user_id,
         )
 
-        if session.status != InterviewStatus.COMPLETED:
+        if session.status == InterviewStatus.IN_PROGRESS:
             raise ValueError(
-                "Coding interview is not completed yet."
+                "End the coding interview before viewing its result."
             )
 
         # -----------------------------------------------------
@@ -600,10 +666,6 @@ class CodingInterviewService:
             .all()
         )
 
-        if not answers:
-            raise ValueError(
-                "No coding answers were submitted."
-            )
 
         # -----------------------------------------------------
         # Prepare result answers
@@ -678,10 +740,29 @@ class CodingInterviewService:
             )
 
         # -----------------------------------------------------
-        # Calculate overall score
+        # Calculate question statuses
         # -----------------------------------------------------
 
+        interview_questions = (
+            self.db.query(CodingInterviewQuestion)
+            .filter(CodingInterviewQuestion.session_id == session.id)
+            .all()
+        )
+        submitted_question_numbers = {answer.question_number for answer in answers}
+        solved_questions = sum(1 for answer in answers if answer.success)
+        skipped_questions = sum(
+            1
+            for question in interview_questions
+            if question.answered and question.question_number not in submitted_question_numbers
+        )
         attempted_questions = len(answers)
+        # Unanswered means not solved. It includes explicitly skipped questions,
+        # never-visited questions, and submitted solutions that did not pass.
+        unanswered_questions = max(session.total_questions - solved_questions, 0)
+
+        # -----------------------------------------------------
+        # Calculate overall score
+        # -----------------------------------------------------
 
         overall_score = (
             total_score / attempted_questions
@@ -700,6 +781,9 @@ class CodingInterviewService:
             status=session.status.value,
             total_questions=session.total_questions,
             attempted_questions=attempted_questions,
+            solved_questions=solved_questions,
+            unanswered_questions=unanswered_questions,
+            skipped_questions=skipped_questions,
             total_test_cases=total_test_cases,
             passed_test_cases=passed_test_cases,
             failed_test_cases=failed_test_cases,

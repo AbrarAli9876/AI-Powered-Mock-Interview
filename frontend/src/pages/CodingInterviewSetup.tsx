@@ -48,6 +48,13 @@ const languages: {
     description:
       "Powerful language for performance-focused programming.",
   },
+
+  {
+    value: "sql",
+    label: "SQL",
+    description:
+      "Query, filter, join, and analyze relational data.",
+  },
 ];
 
 
@@ -147,60 +154,26 @@ function CodingInterviewSetup() {
   async function handleStartInterview() {
     try {
       setStarting(true);
-
       setError(null);
 
+      const setup = {
+        language: selectedLanguage,
+        difficulty: selectedDifficulty,
+        questionCount,
+      };
 
-      /*
-       * The backend is now responsible for:
-       *
-       * 1. Creating the interview session.
-       * 2. Validating the selected language.
-       * 3. Validating the selected difficulty.
-       * 4. Selecting the requested number of questions.
-       * 5. Keeping the difficulty fixed.
-       *
-       * We therefore DO NOT fetch coding questions here.
-       */
+      // Keep coding-interview settings separate from technical-interview settings.
+      sessionStorage.setItem("codingInterviewSetup", JSON.stringify(setup));
+      sessionStorage.removeItem("codingInterviewPreflightVerified");
+      sessionStorage.setItem("codingInterviewPreflightStage", "fullscreen");
 
-      const interview =
-        await createCodingInterview(
-          selectedLanguage,
-          selectedDifficulty,
-          questionCount,
-        );
-
-
-      /*
-       * The backend returns the interview session ID.
-       *
-       * The CodingInterview page will use this ID
-       * to retrieve the current question.
-       */
-
-      navigate(
-        "/coding-interview",
-        {
-          state: {
-            sessionId:
-              interview.id,
-
-            language:
-              selectedLanguage,
-
-            difficulty:
-              selectedDifficulty,
-
-            questionCount:
-              interview.total_questions,
-          },
-        },
-      );
+      // The coding session is created only after all three checks are complete.
+      navigate("/coding-interview/preflight/fullscreen", { state: { setup } });
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to start coding interview.",
+          : "Unable to open coding interview security checks.",
       );
     } finally {
       setStarting(false);
@@ -305,7 +278,7 @@ function CodingInterviewSetup() {
             </div>
 
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
 
               {languages.map(
                 (language) => {

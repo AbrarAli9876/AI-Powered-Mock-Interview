@@ -89,12 +89,9 @@ class CodeExecutionService:
             # Compilation is done once per submission, then run for each test case.
             if config["kind"] in {"java", "cpp"}:
                 compile_command = self._compile_command(config, source_file, workdir)
-                compiler = shutil.which(compile_command[0])
+                compiler = self._resolve_executable(compile_command[0])
                 if compiler is None:
-                    raise RuntimeError(
-                        f"Required compiler '{compile_command[0]}' was not found on PATH. "
-                        "Install the appropriate JDK or C++ compiler and restart the backend."
-                    )
+                    raise RuntimeError(self._compiler_not_found_message(compile_command[0]))
                 compile_start = time.perf_counter()
                 try:
                     compiled = subprocess.run(
@@ -136,12 +133,67 @@ class CodeExecutionService:
             results=results,
         )
 
+    @staticmethod
+    def _resolve_executable(name: str) -> str | None:
+        """
+        Resolve an executable using PATH, JAVA_HOME, and common Windows JDK
+        installation locations. This also handles a backend started before
+        Windows environment-variable changes were picked up.
+        """
+        executable_names = [name]
+        if os.name == "nt" and not name.lower().endswith(".exe"):
+            executable_names.insert(0, f"{name}.exe")
+
+        # First use the current process PATH.
+        for executable_name in executable_names:
+            resolved = shutil.which(executable_name)
+            if resolved:
+                return str(Path(resolved))
+
+        # Next, check JAVA_HOME, which may be configured even if PATH is stale.
+        java_home = os.environ.get("JAVA_HOME")
+        if java_home:
+            for executable_name in executable_names:
+                candidate = Path(java_home) / "bin" / executable_name
+                if candidate.is_file():
+                    return str(candidate)
+
+        # On Windows, check the standard per-user Eclipse Temurin location.
+        if os.name == "nt":
+            local_app_data = os.environ.get("LOCALAPPDATA")
+            if local_app_data:
+                adoptium_dir = Path(local_app_data) / "Programs" / "Eclipse Adoptium"
+                if adoptium_dir.is_dir():
+                    for candidate_dir in sorted(adoptium_dir.glob("jdk*"), reverse=True):
+                        for executable_name in executable_names:
+                            candidate = candidate_dir / "bin" / executable_name
+                            if candidate.is_file():
+                                return str(candidate)
+
+        return None
+
+    @staticmethod
+    def _compiler_not_found_message(executable: str) -> str:
+        if executable.lower() in {"javac", "javac.exe", "java", "java.exe"}:
+            return (
+                f"Required Java executable '{executable}' could not be resolved. "
+                "Set JAVA_HOME to your JDK folder and ensure its bin folder is on PATH, "
+                "then restart the backend."
+            )
+        return (
+            f"Required compiler '{executable}' was not found on PATH. "
+            "Install the appropriate C++ compiler and restart the backend."
+        )
+
     def _prepare_command(self, config: dict, source_file: Path, workdir: Path) -> list[str]:
         kind = config["kind"]
         if kind == "java":
             if "class Main" not in source_file.read_text(encoding="utf-8"):
                 raise ValueError("Java solution must define a class named Main.")
-            return ["java", "-Dfile.encoding=UTF-8", "-cp", str(workdir), "Main"]
+            java_executable = self._resolve_executable("java")
+            if java_executable is None:
+                raise RuntimeError(self._compiler_not_found_message("java"))
+            return [java_executable, "-Dfile.encoding=UTF-8", "-cp", str(workdir), "Main"]
         if kind == "cpp":
             return [str(workdir / "main_program.exe" if os.name == "nt" else workdir / "main_program")]
         return [*config["command"], str(source_file)]
@@ -272,19 +324,36 @@ class CodeExecutionService:
         # Ignore insignificant whitespace differences, including line wrapping.
         return " ".join((value or "").strip().split())
 
-    @staticmethod
-    def _build_environment() -> dict[str, str]:
-        # Keep PATH for installed runtimes; do not pass application secrets.
-        return {
-            "PATH": os.environ.get("PATH", ""),
-            "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
-            "WINDIR": os.environ.get("WINDIR", ""),
-            "TEMP": os.environ.get("TEMP", ""),
-            "TMP": os.environ.get("TMP", ""),
+    @classmethod
+    def _build_environment(cls) -> dict[str, str]:
+        # Preserve the parent PATH and prepend the JDK bin directory when found.
+        path_entries = [entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry]
+        java_executable = cls._resolve_executable("java")
+        javac_executable = cls._resolve_executable("javac")
+        for executable in (java_executable, javac_executable):
+            if executable:
+                bin_dir = str(Path(executable).parent)
+                if bin_dir not in path_entries:
+                    path_entries.insert(0, bin_dir)
+
+        java_home = os.environ.get("JAVA_HOME")
+        if java_home:
+            java_bin = str(Path(java_home) / "bin")
+            if java_bin not in path_entries:
+                path_entries.insert(0, java_bin)
+
+        env = {
+            "PATH": os.pathsep.join(path_entries),
             "PYTHONIOENCODING": "utf-8",
             "PYTHONUTF8": "1",
             "PYTHONDONTWRITEBYTECODE": "1",
         }
+        # Keep required Windows variables if present.
+        for variable in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP", "USERPROFILE"):
+            value = os.environ.get(variable)
+            if value:
+                env[variable] = value
+        return env
 
     def _limit_output(self, output: str) -> str:
         if len(output) <= self.MAX_OUTPUT_LENGTH:

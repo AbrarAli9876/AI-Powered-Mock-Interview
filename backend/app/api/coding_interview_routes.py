@@ -88,6 +88,22 @@ def create_coding_interview(
 
 
 # =========================================================
+# LIST USER CODING INTERVIEWS (RECENT HISTORY)
+# =========================================================
+
+@router.get(
+    "",
+    response_model=list[CodingInterviewResponse],
+)
+def get_coding_interviews(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = CodingInterviewService(db)
+    return service.get_user_interviews(user_id=current_user.id)
+
+
+# =========================================================
 # GET CODING INTERVIEW
 # =========================================================
 
@@ -250,6 +266,38 @@ def next_question(
             detail=str(exc),
         ) from exc
 
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+
+# =========================================================
+# SKIP CURRENT QUESTION
+# =========================================================
+
+@router.post(
+    "/{session_id}/skip-question",
+    response_model=dict,
+)
+def skip_current_question(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Skip the current question and continue, or finish if it is last."""
+    service = CodingInterviewService(db)
+    try:
+        return service.skip_current_question(
+            session_id=session_id,
+            user_id=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     except PermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

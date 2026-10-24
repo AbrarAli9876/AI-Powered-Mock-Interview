@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { createInterview, type Difficulty } from "../lib/api";
+import {
+  createInterview,
+  type Difficulty,
+} from "../lib/api";
 import {
   getInterviewCameraStream,
   getInterviewDisplayStream,
@@ -8,16 +11,6 @@ import {
   setInterviewDisplayStream,
   stopInterviewSetupMedia,
 } from "../lib/interviewMedia";
-import {
-  getIsExtended,
-  inspectDisplayStream,
-  isCameraLive,
-  isVirtualCameraLabel,
-  subscribeScreenChange,
-  verifyEnvironment,
-  waitForVideoFrame,
-  type CheckId,
-} from "../lib/proctoring";
 
 type Setup = {
   topicId: number;
@@ -38,19 +31,23 @@ const stepDetails: Record<PreflightStep, { number: string; title: string; descri
   camera: {
     number: "02 / 04",
     title: "Enable your camera",
-    description: "Allow camera access and confirm that your live preview is working. Virtual cameras are not accepted.",
+    description: "Allow camera access and confirm that your live preview is working.",
   },
   screen: {
     number: "03 / 04",
     title: "Share your entire screen",
-    description: "Select Entire Screen in the browser prompt. Window and tab sharing are rejected, and you can't switch sources once sharing starts.",
+    description: "Select Entire Screen in the browser prompt. Window and tab sharing are not accepted when the browser identifies the source type.",
   },
   ready: {
     number: "04 / 04",
     title: "Verify and start",
-    description: "Every check is run again right before your interview session is created.",
+    description: "All required checks are revalidated before your interview session is created.",
   },
 };
+
+function isLiveVideo(stream: MediaStream | null): boolean {
+  return Boolean(stream?.getVideoTracks().some((track) => track.readyState === "live"));
+}
 
 function readSetup(): Setup | null {
   try {
@@ -68,24 +65,6 @@ function readSetup(): Setup | null {
   }
 }
 
-/**
- * Which step the candidate may be on, derived from the REAL state of the media streams.
- * There is no stored "stage" flag to edit in DevTools: if the streams aren't valid, you can't be ahead.
- */
-function furthestAllowedStep(): PreflightStep {
-  const cameraOk = isCameraLive(getInterviewCameraStream());
-  const screenOk = !inspectDisplayStream(getInterviewDisplayStream());
-  if (cameraOk && screenOk) return "ready"; // fullscreen can be re-entered on this step
-  if (cameraOk) return "screen";
-  return document.fullscreenElement ? "camera" : "fullscreen";
-}
-
-function stepForFailure(id: CheckId): PreflightStep {
-  if (id === "fullscreen") return "fullscreen";
-  if (id === "camera" || id === "virtual-camera") return "camera";
-  return "screen";
-}
-
 export default function InterviewPreflight() {
   const { step: routeStep } = useParams<{ step: string }>();
   const navigate = useNavigate();
@@ -93,123 +72,91 @@ export default function InterviewPreflight() {
   const cameraRef = useRef<HTMLVideoElement | null>(null);
   const screenRef = useRef<HTMLVideoElement | null>(null);
   const screenPickerOpenRef = useRef(false);
-  const startedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [cameraBusy, setCameraBusy] = useState(false);
   const [screenBusy, setScreenBusy] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [cameraReady, setCameraReady] = useState(isLiveVideo(getInterviewCameraStream()));
+  const [screenReady, setScreenReady] = useState(isLiveVideo(getInterviewDisplayStream()));
+  const [fullscreenReady, setFullscreenReady] = useState(Boolean(document.fullscreenElement));
   const [singleDisplayConfirmed, setSingleDisplayConfirmed] = useState(false);
   const [cameraDevices, setCameraDevices] = useState<CameraDevice[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState("");
-  const [tick, setTick] = useState(0);
-  const bump = useCallback(() => setTick((value) => value + 1), []);
 
   const step = useMemo<PreflightStep | null>(
-    () => (stepOrder.includes(routeStep as PreflightStep) ? (routeStep as PreflightStep) : null),
+    () => stepOrder.includes(routeStep as PreflightStep) ? routeStep as PreflightStep : null,
     [routeStep],
   );
-  const setup = useMemo<Setup | null>(
-    () => (location.state as { setup?: Setup } | null)?.setup ?? readSetup(),
-    [location.state],
-  );
-
-  // Derived on every render from the live streams, never from cached booleans.
-  const env = verifyEnvironment({ requireFullscreen: true });
-  const cameraReady = isCameraLive(getInterviewCameraStream());
-  const screenReady = !inspectDisplayStream(getInterviewDisplayStream());
-  const fullscreenReady = Boolean(document.fullscreenElement);
-  const displayUnverifiable = getIsExtended() === undefined;
+  const setup = (location.state as { setup?: Setup } | null)?.setup ?? readSetup();
 
   const goTo = (next: PreflightStep) => {
     setError(null);
-    navigate(`/interviews/preflight/${next}`, { replace: false, state: { setup: setup ?? undefined } });
+    sessionStorage.setItem("technicalInterviewPreflightStage", next);
+    navigate(`/interviews/preflight/${next}`, {
+      replace: false,
+      state: { setup: setup ?? undefined },
+    });
   };
 
-  // Re-render on anything that can change the verification result.
-  useEffect(() => {
-    const interval = window.setInterval(bump, 1000);
-    document.addEventListener("fullscreenchange", bump);
-    const unsubscribeScreen = subscribeScreenChange(bump);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener("fullscreenchange", bump);
-      unsubscribeScreen();
-    };
-  }, [bump]);
-
-  // Gate: a candidate can't be on a step the real state doesn't support.
   useEffect(() => {
     if (!setup || !step) {
       navigate("/interviews/new", { replace: true });
       return;
     }
-    if (screenPickerOpenRef.current || starting) return;
-    const allowed = furthestAllowedStep();
-    if (stepOrder.indexOf(step) > stepOrder.indexOf(allowed)) {
-      navigate(`/interviews/preflight/${allowed}`, { replace: true, state: { setup } });
+
+    const stage = sessionStorage.getItem("technicalInterviewPreflightStage") as PreflightStep | null;
+    const stageIndex = stage ? stepOrder.indexOf(stage) : -1;
+    const requestedIndex = stepOrder.indexOf(step);
+
+    // A candidate cannot jump ahead by manually entering a later URL.
+    if (stageIndex < 0) {
+      sessionStorage.setItem("technicalInterviewPreflightStage", "fullscreen");
+      navigate("/interviews/preflight/fullscreen", { replace: true, state: { setup } });
+      return;
     }
-  }, [setup, step, tick, starting, navigate]);
+    if (requestedIndex > stageIndex) {
+      navigate(`/interviews/preflight/${stage}`, { replace: true, state: { setup } });
+    }
+  }, [setup, step, navigate]);
 
-  // Release the camera/screen if the candidate leaves without starting.
-  useEffect(() => () => {
-    if (!startedRef.current) stopInterviewSetupMedia();
-  }, []);
-
-  // Attach previews.
-  useEffect(() => {
-    const attach = async (element: HTMLVideoElement | null, stream: MediaStream | null) => {
-      if (!element || !stream) return;
-      if (element.srcObject !== stream) element.srcObject = stream;
-      element.muted = true;
-      element.playsInline = true;
-      try { await element.play(); } catch { /* the candidate can click the preview to resume */ }
-    };
-    void attach(cameraRef.current, getInterviewCameraStream());
-    void attach(screenRef.current, getInterviewDisplayStream());
-  }, [step, cameraReady, screenReady]);
-
-  // React instantly when a track ends.
   useEffect(() => {
     const camera = getInterviewCameraStream();
     const display = getInterviewDisplayStream();
-    const onCameraEnded = () => {
-      setError("Camera access stopped. Enable the camera again before continuing.");
-      bump();
+    setCameraReady(isLiveVideo(camera));
+    setScreenReady(isLiveVideo(display));
+    setFullscreenReady(Boolean(document.fullscreenElement));
+
+    const attachPreview = async (element: HTMLVideoElement | null, stream: MediaStream | null) => {
+      if (!element || !stream || !isLiveVideo(stream)) return;
+      if (element.srcObject !== stream) element.srcObject = stream;
+      element.muted = true;
+      element.autoplay = true;
+      element.playsInline = true;
+      try {
+        await element.play();
+      } catch {
+        // The candidate can interact with the page to resume playback if the browser blocks autoplay.
+      }
     };
-    const onCameraMuted = () => bump();
-    const onDisplayEnded = () => {
-      setInterviewDisplayStream(null);
-      setError("Screen sharing stopped. Share your entire screen again to continue.");
-      bump();
-    };
-    camera?.getVideoTracks().forEach((t) => {
-      t.addEventListener("ended", onCameraEnded);
-      t.addEventListener("mute", onCameraMuted);
-      t.addEventListener("unmute", onCameraMuted);
-    });
-    display?.getVideoTracks().forEach((t) => t.addEventListener("ended", onDisplayEnded));
-    return () => {
-      camera?.getVideoTracks().forEach((t) => {
-        t.removeEventListener("ended", onCameraEnded);
-        t.removeEventListener("mute", onCameraMuted);
-        t.removeEventListener("unmute", onCameraMuted);
-      });
-      display?.getVideoTracks().forEach((t) => t.removeEventListener("ended", onDisplayEnded));
-    };
-  }, [bump, cameraReady, screenReady]);
+    void attachPreview(cameraRef.current, camera);
+    void attachPreview(screenRef.current, display);
+  }, [step, cameraReady, screenReady]);
 
   const refreshCameraDevices = async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const cameras = devices
-        .filter((device) => device.kind === "videoinput" && !isVirtualCameraLabel(device.label))
-        .map((device, index) => ({ deviceId: device.deviceId, label: device.label || `Camera ${index + 1}` }));
+        .filter((device) => device.kind === "videoinput")
+        .map((device, index) => ({
+          deviceId: device.deviceId,
+          label: device.label || `Camera ${index + 1}`,
+        }));
       setCameraDevices(cameras);
       const activeId = getInterviewCameraStream()?.getVideoTracks()[0]?.getSettings().deviceId;
       setSelectedCameraId((current) => {
-        if (current && cameras.some((c) => c.deviceId === current)) return current;
-        if (activeId && cameras.some((c) => c.deviceId === activeId)) return activeId;
+        if (current && cameras.some((camera) => camera.deviceId === current)) return current;
+        if (activeId && cameras.some((camera) => camera.deviceId === activeId)) return activeId;
         return cameras[0]?.deviceId ?? "";
       });
     } catch {
@@ -221,17 +168,65 @@ export default function InterviewPreflight() {
     if (step === "camera") void refreshCameraDevices();
   }, [step]);
 
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      const active = Boolean(document.fullscreenElement);
+      setFullscreenReady(active);
+
+      // Do not navigate away when Chrome temporarily exits fullscreen while
+      // opening/closing its native screen-share picker. Keep the candidate on
+      // the current step; the final Start button remains disabled until
+      // fullscreen is active again.
+      if (!active && screenPickerOpenRef.current) return;
+
+      // Do not force a route reset on fullscreenchange. Browsers can exit
+      // fullscreen as part of screen sharing, and a site cannot prevent that.
+      // The candidate can re-enter fullscreen using the explicit button.
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, [navigate, setup, step]);
+
+  useEffect(() => {
+    const camera = getInterviewCameraStream();
+    const display = getInterviewDisplayStream();
+    const onCameraEnded = () => {
+      setCameraReady(false);
+      setError("Camera access stopped. You must enable the camera again before continuing.");
+      sessionStorage.setItem("technicalInterviewPreflightStage", "camera");
+      navigate("/interviews/preflight/camera", { replace: true, state: { setup: setup ?? undefined } });
+    };
+    const onDisplayEnded = () => {
+      setScreenReady(false);
+      setInterviewDisplayStream(null);
+      setError("Screen sharing stopped. Share your entire screen again to continue.");
+      sessionStorage.setItem("technicalInterviewPreflightStage", "screen");
+      navigate("/interviews/preflight/screen", { replace: true, state: { setup: setup ?? undefined } });
+    };
+    camera?.getVideoTracks().forEach((track) => track.addEventListener("ended", onCameraEnded));
+    display?.getVideoTracks().forEach((track) => track.addEventListener("ended", onDisplayEnded));
+    return () => {
+      camera?.getVideoTracks().forEach((track) => track.removeEventListener("ended", onCameraEnded));
+      display?.getVideoTracks().forEach((track) => track.removeEventListener("ended", onDisplayEnded));
+    };
+  }, [navigate, setup, step, cameraReady, screenReady]);
+
   const handleFullscreen = async () => {
     setError(null);
     if (!document.fullscreenEnabled) {
-      setError("Fullscreen is unavailable in this browser. Please use Chrome or Edge.");
+      setError("Fullscreen is unavailable in this browser. Please use a supported browser.");
       return;
     }
     try {
-      if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
       if (!document.fullscreenElement) throw new Error("Fullscreen could not be enabled.");
-      bump();
-      if (step === "fullscreen") goTo("camera");
+      setFullscreenReady(true);
+
+      // Entering fullscreen from the first step should advance to camera.
+      // Re-entering fullscreen from final verification must stay on that step.
+      if (step === "fullscreen") {
+        goTo("camera");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fullscreen permission was not granted.");
     }
@@ -240,12 +235,14 @@ export default function InterviewPreflight() {
   const handleCamera = async () => {
     setError(null);
 
-    // Already live on the selected device: confirm and continue.
+    // The first click requests/starts the selected camera. Once a live stream
+    // is already running for the selected device, this button confirms it and
+    // advances to the screen-sharing step.
     const activeStream = getInterviewCameraStream();
-    const activeDeviceId = activeStream?.getVideoTracks()[0]?.getSettings().deviceId;
+    const activeTrack = activeStream?.getVideoTracks()[0];
+    const activeDeviceId = activeTrack?.getSettings().deviceId;
     if (
-      isCameraLive(activeStream) &&
-      !isVirtualCameraLabel(activeStream?.getVideoTracks()[0]?.label) &&
+      isLiveVideo(activeStream) &&
       (!selectedCameraId || !activeDeviceId || activeDeviceId === selectedCameraId)
     ) {
       goTo("screen");
@@ -253,40 +250,36 @@ export default function InterviewPreflight() {
     }
 
     setCameraBusy(true);
-    let candidate: MediaStream | null = null;
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Camera access requires a supported browser on HTTPS or localhost.");
       }
-      const video: MediaTrackConstraints = selectedCameraId ? { deviceId: { exact: selectedCameraId } } : {};
-      candidate = await navigator.mediaDevices.getUserMedia({ video, audio: false });
-      const track = candidate.getVideoTracks()[0];
-      if (!track || track.readyState !== "live") throw new Error("No active camera was detected.");
-      if (isVirtualCameraLabel(track.label)) {
-        throw new Error(`"${track.label}" looks like a virtual camera. Select a physical camera.`);
+      const videoConstraint: MediaTrackConstraints = selectedCameraId
+        ? { deviceId: { exact: selectedCameraId } }
+        : {};
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint, audio: false });
+      if (!isLiveVideo(stream)) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error("No active camera was detected.");
       }
-
-      const element = cameraRef.current;
-      if (!element) throw new Error("Camera preview is unavailable. Reload the page and try again.");
-      element.srcObject = candidate;
-      element.muted = true;
-      element.playsInline = true;
-      try { await element.play(); } catch {
-        throw new Error("The camera was detected, but its preview could not start. Close other apps using the camera and try again.");
-      }
-      if (!(await waitForVideoFrame(element))) {
-        throw new Error("The camera isn't sending video. Check that it isn't covered or in use by another app.");
-      }
-
       const previous = getInterviewCameraStream();
-      if (previous && previous !== candidate) previous.getTracks().forEach((t) => t.stop());
-      setInterviewCameraStream(candidate);
-      candidate = null; // ownership moved to the store
-      await refreshCameraDevices(); // labels are available now, so virtual devices get filtered out
-      bump();
+      if (previous && previous !== stream) previous.getTracks().forEach((track) => track.stop());
+      setInterviewCameraStream(stream);
+      setCameraReady(true);
+      if (cameraRef.current) {
+        cameraRef.current.srcObject = stream;
+        cameraRef.current.muted = true;
+        cameraRef.current.playsInline = true;
+        try {
+          await cameraRef.current.play();
+        } catch {
+          throw new Error("The camera is detected, but its preview could not start. Click Allow camera again or check whether another app is using the camera.");
+        }
+      }
+      await refreshCameraDevices();
+      // Stay on the camera step so the candidate can see the live preview first.
+      // Clicking the button again confirms the already-live stream and continues.
     } catch (err) {
-      candidate?.getTracks().forEach((t) => t.stop());
-      if (cameraRef.current && cameraRef.current.srcObject === candidate) cameraRef.current.srcObject = null;
       setError(err instanceof Error ? err.message : "Camera permission was denied or the camera is unavailable.");
     } finally {
       setCameraBusy(false);
@@ -295,85 +288,100 @@ export default function InterviewPreflight() {
 
   const handleScreenShare = async () => {
     setError(null);
-    if (!isCameraLive(getInterviewCameraStream())) {
+    if (!isLiveVideo(getInterviewCameraStream())) {
       setError("Enable the camera first.");
       goTo("camera");
       return;
     }
-    if (getIsExtended() === true) {
-      setError("More than one display is connected. Disconnect the extra monitors, then share your screen.");
-      return;
-    }
     setScreenBusy(true);
-    let stream: MediaStream | null = null;
     try {
       if (!navigator.mediaDevices?.getDisplayMedia) throw new Error("Screen sharing is unavailable in this browser.");
-      // Chrome drops fullscreen while its picker is open. That is expected, not a violation.
+      // Keep the fullscreen-change handler from treating Chrome's screen-picker transition
+      // as a candidate violation. The browser still owns the native picker UI.
       screenPickerOpenRef.current = true;
-      stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: "monitor" } as MediaTrackConstraints,
-        audio: false,
-        preferCurrentTab: false,
-        selfBrowserSurface: "exclude",
-        // Stops the candidate switching the shared source to a window/tab after approval.
-        surfaceSwitching: "exclude",
-        monitorTypeSurfaces: "include",
-      } as DisplayMediaStreamOptions);
-
-      const failure = inspectDisplayStream(stream);
-      if (failure) throw new Error(failure.message);
-
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { displaySurface: "monitor" } as MediaTrackConstraints,
+          audio: false,
+          // Chromium may use these as hints; they do not disable tab/window choices.
+          preferCurrentTab: false,
+          selfBrowserSurface: "exclude",
+          monitorTypeSurfaces: "include",
+        } as DisplayMediaStreamOptions);
+      const track = stream.getVideoTracks()[0];
+      const settings = track?.getSettings() as (MediaTrackSettings & { displaySurface?: string }) | undefined;
+      if (!track || track.readyState !== "live") {
+        stream.getTracks().forEach((item) => item.stop());
+        throw new Error("No active screen-sharing source was selected.");
+      }
+      if (settings?.displaySurface !== "monitor") {
+        stream.getTracks().forEach((item) => item.stop());
+        throw new Error(settings?.displaySurface
+          ? "Window and tab sharing are not allowed. Please select Entire Screen and try again."
+          : "This browser does not identify the selected screen source, so the app cannot verify entire-screen sharing. Please use a supported browser and try again.");
+      }
       const previous = getInterviewDisplayStream();
-      if (previous && previous !== stream) previous.getTracks().forEach((t) => t.stop());
+      if (previous && previous !== stream) previous.getTracks().forEach((item) => item.stop());
       setInterviewDisplayStream(stream);
-      stream = null; // ownership moved to the store
-
+      setScreenReady(true);
       if (screenRef.current) {
-        screenRef.current.srcObject = getInterviewDisplayStream();
+        screenRef.current.srcObject = stream;
         await screenRef.current.play().catch(() => undefined);
       }
+
+      // Chrome may leave fullscreen when its screen picker closes. Try to
+      // restore it while the user is still completing this action. If the
+      // browser blocks the request, remain on verification and let the
+      // candidate use the explicit "Re-enter fullscreen" button.
       if (!document.fullscreenElement) {
-        try { await document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch { /* the Ready step offers a re-enter button */ }
+        try {
+          await document.documentElement.requestFullscreen();
+        } catch {
+          // Expected in some browsers because fullscreen requires a fresh
+          // user gesture. The UI will show the re-entry button.
+        }
       }
+
       goTo("ready");
     } catch (err) {
-      stream?.getTracks().forEach((t) => t.stop());
+      setScreenReady(false);
       setError(err instanceof Error ? err.message : "Screen sharing was cancelled or failed.");
     } finally {
       screenPickerOpenRef.current = false;
+      setFullscreenReady(Boolean(document.fullscreenElement));
       setScreenBusy(false);
-      bump();
     }
   };
 
   const startInterview = async () => {
     setError(null);
-    if (starting) return;
     if (!setup) {
       setError("Your interview configuration is missing. Please configure your interview again.");
       return;
     }
-
-    // Final, independent re-verification of every requirement.
-    const result = verifyEnvironment({ requireFullscreen: true });
-    if (!result.ok) {
-      const first = result.failures[0];
-      goTo(stepForFailure(first.id));
-      setError(first.message);
+    const camera = getInterviewCameraStream();
+    const display = getInterviewDisplayStream();
+    const displayTrack = display?.getVideoTracks()[0];
+    const displaySettings = displayTrack?.getSettings() as (MediaTrackSettings & { displaySurface?: string }) | undefined;
+    const valid = Boolean(
+      document.fullscreenElement &&
+      isLiveVideo(camera) &&
+      displayTrack?.readyState === "live" &&
+      displaySettings?.displaySurface === "monitor" &&
+      singleDisplayConfirmed
+    );
+    if (!valid) {
+      if (!document.fullscreenElement) goTo("fullscreen");
+      else if (!isLiveVideo(camera)) goTo("camera");
+      else goTo("screen");
+      setError("One or more security checks are incomplete. Complete each step before starting.");
       return;
     }
-    if (displayUnverifiable && !singleDisplayConfirmed) {
-      setError("Confirm that you are using only one display.");
-      return;
-    }
-
+    if (starting) return;
     setStarting(true);
     try {
-      const evidence = { ...result.evidence, singleDisplayAttested: displayUnverifiable ? singleDisplayConfirmed : undefined };
-      // The server must treat this as a claim to cross-check, never as proof.
-      const interview = await createInterview(setup.topicId, setup.startingDifficulty, setup.questionCount, evidence);
-      startedRef.current = true;
       sessionStorage.setItem("technicalInterviewPreflightVerified", "true");
+      sessionStorage.removeItem("technicalInterviewPreflightStage");
+      const interview = await createInterview(setup.topicId, setup.startingDifficulty);
       navigate(`/interviews/${interview.id}`, { replace: true, state: { preflightChecksPassed: true } });
     } catch (err) {
       sessionStorage.removeItem("technicalInterviewPreflightVerified");
@@ -385,18 +393,15 @@ export default function InterviewPreflight() {
 
   if (!setup || !step) return null;
   const details = stepDetails[step];
-
-  const rows: [string, CheckId[]][] = [
-    ["Fullscreen", ["fullscreen"]],
-    ["Camera", ["camera", "virtual-camera"]],
-    ["Entire screen", ["screen-ended", "screen-surface"]],
-    ["Single display", ["multi-display"]],
-  ];
-  const rowPassed = (ids: CheckId[]) => {
-    const clear = !env.failures.some((f) => ids.includes(f.id));
-    return ids.includes("multi-display") && displayUnverifiable ? clear && singleDisplayConfirmed : clear;
-  };
-  const canStart = env.ok && (!displayUnverifiable || singleDisplayConfirmed) && !starting;
+  const checkRows = [
+    ["Fullscreen", Boolean(document.fullscreenElement)],
+    ["Camera", isLiveVideo(getInterviewCameraStream())],
+    ["Entire screen", (() => {
+      const track = getInterviewDisplayStream()?.getVideoTracks()[0];
+      const settings = track?.getSettings() as (MediaTrackSettings & { displaySurface?: string }) | undefined;
+      return track?.readyState === "live" && settings?.displaySurface === "monitor";
+    })()],
+  ] as const;
 
   return (
     <div className="app-background min-h-screen px-5 py-8 sm:px-8">
@@ -436,11 +441,11 @@ export default function InterviewPreflight() {
               </label>
               <button type="button" onClick={() => void refreshCameraDevices()} className="self-end rounded-2xl border border-white/[0.12] px-4 py-4 text-sm text-slate-300 hover:text-white" disabled={cameraBusy}>Refresh cameras</button>
             </div>
-            <p className="mt-2 text-xs text-slate-500">Camera names may appear only after browser permission is granted. Virtual cameras are hidden and rejected.</p>
+            <p className="mt-2 text-xs text-slate-500">Connect an external USB webcam before refreshing. Camera names may appear only after browser permission is granted.</p>
             <div className="mt-5 overflow-hidden rounded-2xl border border-white/[0.08] bg-black/30">
               <video ref={cameraRef} autoPlay muted playsInline onClick={() => { void cameraRef.current?.play().catch(() => setError("Camera preview could not start. Check browser camera permissions and close other apps using the camera.")); }} className="aspect-video max-h-[420px] w-full bg-slate-950 object-cover" aria-label="Camera preview" />
             </div>
-            <p className="mt-3 text-xs text-slate-500">The camera must stay active for the whole interview. If it stops, the interview ends.</p>
+            <p className="mt-3 text-xs text-slate-500">The camera must remain active throughout the interview. If it stops during the test, the interview will be terminated.</p>
             <button type="button" disabled={cameraBusy} onClick={() => void handleCamera()} className="mt-6 w-full rounded-2xl bg-violet-400 px-5 py-4 text-sm font-semibold text-slate-950 transition hover:bg-violet-300 disabled:opacity-50">{cameraBusy ? "Requesting camera…" : cameraReady ? "Confirm camera and continue →" : "Allow camera →"}</button>
           </>}
 
@@ -455,29 +460,19 @@ export default function InterviewPreflight() {
           </>}
 
           {step === "ready" && <>
-            <div className="mt-7 grid gap-3 sm:grid-cols-2">
-              {rows.map(([label, ids]) => {
-                const passed = rowPassed(ids);
-                return <div key={label} className="flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-black/10 p-4"><span className={`flex h-8 w-8 items-center justify-center rounded-full ${passed ? "bg-cyan-300/10 text-cyan-200" : "bg-rose-400/10 text-rose-200"}`}>{passed ? "✓" : "!"}</span><div><p className="text-sm font-medium text-white">{label}</p><p className={`mt-1 text-xs ${passed ? "text-cyan-200" : "text-rose-200"}`}>{passed ? "Ready" : "Required"}</p></div></div>;
-              })}
+            <div className="mt-7 grid gap-3 sm:grid-cols-3">
+              {checkRows.map(([label, passed]) => <div key={label} className="flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-black/10 p-4"><span className={`flex h-8 w-8 items-center justify-center rounded-full ${passed ? "bg-cyan-300/10 text-cyan-200" : "bg-rose-400/10 text-rose-200"}`}>{passed ? "✓" : "!"}</span><div><p className="text-sm font-medium text-white">{label}</p><p className={`mt-1 text-xs ${passed ? "text-cyan-200" : "text-rose-200"}`}>{passed ? "Ready" : "Required"}</p></div></div>)}
             </div>
-            {env.failures.length > 0 && (
-              <ul className="mt-4 space-y-1 text-xs leading-5 text-rose-200">
-                {env.failures.map((f) => <li key={f.id}>{f.message}</li>)}
-              </ul>
-            )}
-            {displayUnverifiable && (
-              <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-2xl border border-white/[0.07] bg-black/10 p-4 text-sm leading-6 text-slate-300"><input type="checkbox" checked={singleDisplayConfirmed} onChange={(event) => setSingleDisplayConfirmed(event.target.checked)} className="mt-1 accent-violet-400" /><span>This browser can't count displays. I confirm that I am using only one display.</span></label>
-            )}
+            <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-2xl border border-white/[0.07] bg-black/10 p-4 text-sm leading-6 text-slate-300"><input type="checkbox" checked={singleDisplayConfirmed} onChange={(event) => setSingleDisplayConfirmed(event.target.checked)} className="mt-1 accent-violet-400"/><span>I confirm that I am using only one display. Browsers cannot reliably count physical monitors, so this requirement needs candidate confirmation.</span></label>
             {!fullscreenReady && <button type="button" onClick={() => void handleFullscreen()} className="mt-5 w-full rounded-2xl border border-violet-300/30 px-5 py-3 text-sm font-semibold text-violet-200 hover:bg-violet-400/10">Re-enter fullscreen to continue</button>}
-            <button type="button" disabled={!canStart} onClick={() => void startInterview()} className="mt-6 w-full rounded-2xl bg-violet-400 px-5 py-4 text-sm font-semibold text-slate-950 transition hover:bg-violet-300 disabled:cursor-not-allowed disabled:opacity-40">{starting ? "Starting interview…" : "All checks complete — Start interview →"}</button>
+            <button type="button" disabled={starting || !fullscreenReady || !cameraReady || !screenReady || !singleDisplayConfirmed} onClick={() => void startInterview()} className="mt-6 w-full rounded-2xl bg-violet-400 px-5 py-4 text-sm font-semibold text-slate-950 transition hover:bg-violet-300 disabled:cursor-not-allowed disabled:opacity-40">{starting ? "Starting interview…" : "All checks complete — Start interview →"}</button>
           </>}
-
           <div className="mt-6 border-t border-white/[0.07] pt-5"><button type="button" onClick={() => {
             setError(null);
             if (step === "fullscreen") {
               stopInterviewSetupMedia();
               sessionStorage.removeItem("technicalInterviewPreflightVerified");
+              sessionStorage.removeItem("technicalInterviewPreflightStage");
               navigate("/interviews/new");
             } else {
               const previous = stepOrder[stepOrder.indexOf(step) - 1];
@@ -488,4 +483,4 @@ export default function InterviewPreflight() {
       </main>
     </div>
   );
-} 
+}

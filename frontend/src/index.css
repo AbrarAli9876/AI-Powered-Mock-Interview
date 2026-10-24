@@ -854,13 +854,14 @@ button:focus-visible {
 .dashboard-view-button {
   border: 0;
 
-  padding: 0;
-
+  padding: 8px 12px;
+  
+   font-weight: 600;
   background: transparent;
 
   color: var(--accent-violet);
 
-  font-size: 11px;
+  font-size: 12px;
 
   cursor: pointer;
 }

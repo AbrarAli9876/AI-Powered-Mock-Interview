@@ -79,6 +79,8 @@ export default function InterviewRoom() {
   const [showFullscreenGate, setShowFullscreenGate] = useState(false);
   const [isSecurityTerminated, setIsSecurityTerminated] = useState(false);
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
+  const [securityTerminationMessage, setSecurityTerminationMessage] = useState<string | null>(null);
+  const pendingTabChangeRef = useRef(false);
   const securityTerminationRef = useRef(false);
   const securityActiveRef = useRef(false);
   const interviewRef = useRef<Interview | null>(null);
@@ -480,7 +482,9 @@ export default function InterviewRoom() {
     }
     const handleFullscreenChange = () => {
       // Ignore fullscreen changes until the candidate has started securely.
-      if (!securityActiveRef.current) {
+      // A tab switch can also exit fullscreen; handle that as a tab violation
+      // only after the candidate returns to this page.
+      if (!securityActiveRef.current || document.visibilityState === "hidden") {
         return;
       }
       if (document.fullscreenElement) {
@@ -490,8 +494,9 @@ export default function InterviewRoom() {
       setFullscreenWarningCount((previousCount) => {
         const nextCount = previousCount + 1;
         if (nextCount >= 3) {
-          void terminateForSecurityViolation(
-            "The interview was ended because you exited fullscreen three times.",
+          setShowFullscreenWarning(false);
+          setSecurityTerminationMessage(
+            "Your interview is terminated because you have closed the full screen for the 3rd time.",
           );
         } else {
           setShowFullscreenWarning(true);
@@ -500,10 +505,23 @@ export default function InterviewRoom() {
       });
     };
     const handleVisibilityChange = () => {
-      // Switching to another tab/window ends the interview immediately.
-      if (securityActiveRef.current && document.visibilityState === "hidden") {
-        void terminateForSecurityViolation(
-          "The interview was ended because you left the interview tab or window.",
+      if (!securityActiveRef.current) return;
+
+      // Wait until the candidate returns to this website before showing the
+      // termination message. The interview is terminated after confirmation.
+      if (document.visibilityState === "hidden") {
+        pendingTabChangeRef.current = true;
+        return;
+      }
+
+      if (
+        document.visibilityState === "visible" &&
+        pendingTabChangeRef.current
+      ) {
+        pendingTabChangeRef.current = false;
+        setShowFullscreenWarning(false);
+        setSecurityTerminationMessage(
+          "Your interview is terminated because you have changed the tab.",
         );
       }
     };
@@ -814,26 +832,6 @@ export default function InterviewRoom() {
               <h2 className="mt-6 font-display text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
                 {question.question_text}
               </h2>
-              {question.companies && question.companies.length > 0 && (
-                <div className="mt-5 border-t border-white/[0.06] pt-4">
-                  <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500">
-                    Frequently reported at
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {question.companies.map((company) => (
-                      <span
-                        key={company}
-                        className="rounded-full border border-violet-400/20 bg-violet-400/[0.08] px-3 py-1.5 text-xs font-medium text-violet-200"
-                      >
-                        {company}
-                      </span>
-                    ))}
-                  </div>
-                  <p className="mt-2 text-[10px] leading-4 text-slate-600">
-                    Company attribution is based on commonly reported interview experiences, not an official company question bank.
-                  </p>
-                </div>
-              )}
             </div>
             {/* Answer */}
             <div className="mt-6 rounded-3xl border border-white/[0.06] bg-white/[0.025] p-6 sm:p-8">
@@ -1155,9 +1153,48 @@ export default function InterviewRoom() {
         </div>
       )}
       {/* =======================================================
+          SECURITY TERMINATION CONFIRMATION
+      ======================================================== */}
+      {securityTerminationMessage && !isSecurityTerminated && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-5 backdrop-blur-sm"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="security-termination-title"
+          aria-describedby="security-termination-description"
+        >
+          <div className="w-full max-w-md rounded-3xl border border-red-400/30 bg-slate-950 p-7 text-center shadow-2xl">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-red-400/[0.10] text-red-300">
+              !
+            </div>
+            <h2
+              id="security-termination-title"
+              className="mt-5 font-display text-xl font-semibold text-white"
+            >
+              Interview terminated
+            </h2>
+            <p
+              id="security-termination-description"
+              className="mt-3 text-sm leading-6 text-slate-300"
+            >
+              {securityTerminationMessage}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                void terminateForSecurityViolation(securityTerminationMessage);
+              }}
+              className="mt-6 w-full rounded-2xl bg-red-400 px-6 py-4 text-sm font-semibold text-slate-950 transition hover:bg-red-300"
+            >
+              End interview
+            </button>
+          </div>
+        </div>
+      )}
+      {/* =======================================================
           FULLSCREEN WARNING
       ======================================================== */}
-      {showFullscreenWarning && !isSecurityTerminated && (
+      {showFullscreenWarning && !isSecurityTerminated && !securityTerminationMessage && (
         <div
           className="fixed inset-0 z-[55] flex items-center justify-center bg-black/75 px-5 backdrop-blur-sm"
           role="dialog"

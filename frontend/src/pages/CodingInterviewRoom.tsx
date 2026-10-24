@@ -1,1516 +1,454 @@
+
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-
-import Editor, { type OnMount } from "@monaco-editor/react";
-
+  FaceDetector,
+  FilesetResolver,
+} from "@mediapipe/tasks-vision";
+import CodingInterview from "./CodingInterview";
+import { abandonCodingInterview } from "../lib/api";
 import {
-  useLocation,
-  useNavigate,
-} from "react-router-dom";
+  getInterviewCameraStream,
+  getInterviewDisplayStream,
+  stopInterviewSetupMedia,
+} from "../lib/interviewMedia";
 
-import {
-  abandonCodingInterview,
-  getCodingInterview,
-  getCodingInterviewResult,
-  getCurrentCodingQuestion,
-  getNextCodingQuestion,
-  runCode,
-  submitCodingAnswer,
-  type CodingInterview,
-  type CodingInterviewQuestionResponse,
-  type CodingInterviewResult,
-  type CodingLanguage,
-  type CodingQuestion,
-  type CodeExecutionResponse,
-  type Difficulty,
-} from "../lib/api";
+const FACE_TIMEOUT_MS = 5000;
 
-interface CodingInterviewState {
-  sessionId?: number;
-  language: CodingLanguage;
-  difficulty: Difficulty;
-  questionCount?: number;
-
-  questions?: CodingQuestion[];
-}
-
-const LANGUAGE_LABELS: Record<
-  CodingLanguage,
-  string
-> = {
-  python: "Python",
-  javascript: "JavaScript",
-  java: "Java",
-  cpp: "C++",
-};
-
-const DIFFICULTY_LABELS: Record<
-  Difficulty,
-  string
-> = {
-  easy: "Easy",
-  medium: "Medium",
-  hard: "Hard",
-};
-
-function formatExamples(
-  examples: string,
-): {
-  input: string;
-  output: string;
-}[] {
-  if (!examples) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(examples);
-
-    if (Array.isArray(parsed)) {
-      return parsed.map(
-        (example) => ({
-          input: String(
-            example.input ??
-            example.Input ??
-            "",
-          ),
-
-          output: String(
-            example.output ??
-            example.Output ??
-            "",
-          ),
-        }),
-      );
-    }
-
-    return [
-      {
-        input: String(
-          parsed.input ??
-          parsed.Input ??
-          "",
-        ),
-
-        output: String(
-          parsed.output ??
-          parsed.Output ??
-          "",
-        ),
-      },
-    ];
-  } catch {
-    return [
-      {
-        input: examples,
-        output: "",
-      },
-    ];
-  }
-}
-
-export default function CodingInterview() {
+export default function CodingInterviewRoom() {
   const navigate = useNavigate();
-
   const location = useLocation();
-
-  const interviewState =
-    location.state as
-      | CodingInterviewState
-      | null;
-
-  const initialSessionId =
-    interviewState?.sessionId;
-
-  const [
-    sessionId,
-    setSessionId,
-  ] = useState<number | null>(
-    initialSessionId ?? null,
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const terminatedRef = useRef(false);
+  const fullscreenExitCountRef = useRef(0);
+  const pendingTabChangeRef = useRef(false);
+  const terminateRef = useRef<(reason: string) => void>(
+    () => undefined
   );
 
-  const [
-    interview,
-    setInterview,
-  ] = useState<CodingInterview | null>(
-    null,
-  );
+  const [fullscreenWarning, setFullscreenWarning] =
+    useState<string | null>(null);
+  const [terminationMessage, setTerminationMessage] =
+    useState<string | null>(null);
+  const [faceCountdown, setFaceCountdown] =
+    useState<number | null>(null);
 
-  const [
-    currentQuestionData,
-    setCurrentQuestionData,
-  ] = useState<
-    CodingInterviewQuestionResponse | null
-  >(null);
+  const state = location.state as {
+    sessionId?: number | string;
+    preflightChecksPassed?: boolean;
+  } | null;
 
-  const currentQuestion =
-    currentQuestionData?.question ?? null;
+  // Use router state first, then the sessionStorage fallback written by preflight.
+  const storedSessionId = sessionStorage.getItem("codingInterviewSessionId");
+  const rawSessionId = state?.sessionId ?? storedSessionId;
+  const sessionId =
+    rawSessionId !== undefined && rawSessionId !== null && String(rawSessionId).trim() !== ""
+      ? String(rawSessionId)
+      : null;
 
-  const [
-    code,
-    setCode,
-  ] = useState("");
-
-  const [
-    isRunning,
-    setIsRunning,
-  ] = useState(false);
-
-  const [
-    executionResult,
-    setExecutionResult,
-  ] = useState<
-    CodeExecutionResponse | null
-  >(null);
-
-  const allTestsPassed =
-    executionResult !== null &&
-    executionResult.success &&
-    executionResult.total_test_cases > 0 &&
-    executionResult.passed_test_cases ===
-      executionResult.total_test_cases;
-
-  const [
-    isSubmitting,
-    setIsSubmitting,
-  ] = useState(false);
-
-  const [
-    isSubmitted,
-    setIsSubmitted,
-  ] = useState(false);
-
-  const [
-    submitResult,
-    setSubmitResult,
-  ] = useState<{
-    success: boolean;
-    passed: number;
-    total: number;
-    score?: number;
-    isLastQuestion: boolean;
-  } | null>(null);
-
-  const [
-    isLoading,
-    setIsLoading,
-  ] = useState(true);
-
-  const [
-    isLoadingNext,
-    setIsLoadingNext,
-  ] = useState(false);
-
-  const [
-    error,
-    setError,
-  ] = useState<string | null>(null);
-
-  const [
-    showExitConfirmation,
-    setShowExitConfirmation,
-  ] = useState(false);
-
-  const [
-    isLoadingResult,
-    setIsLoadingResult,
-  ] = useState(false);
-
-  const examples = useMemo(
-    () =>
-      currentQuestion
-        ? formatExamples(
-            currentQuestion.examples,
-          )
-        : [],
-    [currentQuestion],
-  );
+  const preflightChecksPassed =
+    state?.preflightChecksPassed === true ||
+    sessionStorage.getItem("codingInterviewPreflightVerified") === "true";
 
   useEffect(() => {
-    if (!interviewState) {
-      navigate(
-        "/coding-interview/setup",
-        {
-          replace: true,
-        },
-      );
-
+    if (!sessionId || !preflightChecksPassed) {
+      sessionStorage.removeItem("codingInterviewPreflightVerified");
+      sessionStorage.removeItem("codingInterviewPreflightStage");
+      sessionStorage.removeItem("codingInterviewSessionId");
+      navigate("/coding-interview/new", { replace: true });
       return;
     }
 
-    if (!initialSessionId) {
-      setError(
-        "Coding interview session was not found. Please start a new interview.",
-      );
+    const camera = getInterviewCameraStream();
+    const display = getInterviewDisplayStream();
 
-      setIsLoading(false);
-    }
-  }, [
-    interviewState,
-    initialSessionId,
-    navigate,
-  ]);
+    const cameraTrack = camera
+      ?.getVideoTracks()
+      .find((track) => track.readyState === "live");
 
-  useEffect(() => {
-    if (sessionId === null) {
-      return;
-    }
+    const displayTrack = display
+      ?.getVideoTracks()
+      .find((track) => track.readyState === "live");
 
-    const id = sessionId;
+    let disposed = false;
+    let faceDetector: FaceDetector | null = null;
+    let rafId = 0;
+    let noFaceSince: number | null = null;
+    let lastDetectionAt = 0;
+    let detectionBusy = false;
 
-    let cancelled = false;
+    const terminate = async (reason: string) => {
+      if (terminatedRef.current || disposed) return;
 
-    async function loadInterview() {
+      terminatedRef.current = true;
+      setFaceCountdown(null);
+      setFullscreenWarning(null);
+      setTerminationMessage(null);
+
+      sessionStorage.removeItem("codingInterviewPreflightVerified");
+      sessionStorage.removeItem("codingInterviewPreflightStage");
+      sessionStorage.removeItem("codingInterviewSessionId");
+
       try {
-        setIsLoading(true);
-        setError(null);
-
-        const [
-          interviewData,
-          questionData,
-        ] = await Promise.all([
-          getCodingInterview(
-            id,
-          ),
-
-          getCurrentCodingQuestion(
-            id,
-          ),
-        ]);
-
-        if (cancelled) {
-          return;
-        }
-
-        setInterview(
-          interviewData,
-        );
-
-        setCurrentQuestionData(
-          questionData,
-        );
-
-        setCode(
-          questionData.question
-            .starter_code || "",
-        );
-
-        setExecutionResult(
-          null,
-        );
-
-        setSubmitResult(
-          null,
-        );
-
-        setIsSubmitted(false);
-      } catch (err) {
-        if (cancelled) {
-          return;
-        }
-
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Unable to load the coding interview.",
-        );
+        await abandonCodingInterview(Number(sessionId));
+      } catch {
+        // Continue termination even if saving fails.
       } finally {
-        if (!cancelled) {
-          setIsLoading(false);
+        stopInterviewSetupMedia();
+
+        try {
+          if (document.fullscreenElement) {
+            await document.exitFullscreen();
+          }
+        } catch {
+          // The browser may already have exited fullscreen.
         }
-      }
-    }
 
-    void loadInterview();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (!currentQuestion) {
-      return;
-    }
-
-    setCode(
-      currentQuestion.starter_code ||
-      "",
-    );
-
-    setExecutionResult(
-      null,
-    );
-
-    setSubmitResult(
-      null,
-    );
-
-    setIsSubmitted(false);
-
-    setError(null);
-  }, [
-    currentQuestion?.id,
-  ]);
-
-  async function handleRunCode() {
-    if (!currentQuestion) {
-      return;
-    }
-
-    if (!code.trim()) {
-      setError(
-        "Please write some code before running it.",
-      );
-
-      return;
-    }
-
-    try {
-      setError(null);
-
-      setIsRunning(true);
-
-      setExecutionResult(
-        null,
-      );
-
-      const result =
-        await runCode(
-          currentQuestion.id,
-          code,
-        );
-
-      setExecutionResult(
-        result,
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to execute the code.",
-      );
-    } finally {
-      setIsRunning(false);
-    }
-  }
-
-  async function handleSubmit() {
-    if (!sessionId) {
-      setError(
-        "Interview session not found.",
-      );
-
-      return;
-    }
-
-    if (!currentQuestion) {
-      return;
-    }
-
-    if (!code.trim()) {
-      setError(
-        "Please write some code before submitting.",
-      );
-
-      return;
-    }
-
-    if (!allTestsPassed) {
-      setError(
-        "Please run your code and pass all test cases before submitting.",
-      );
-
-      return;
-    }
-
-    if (isSubmitted) {
-      return;
-    }
-
-    try {
-      setError(null);
-
-      setIsSubmitting(true);
-
-      const result =
-        await submitCodingAnswer(
-          sessionId,
-          code,
-        );
-
-      setSubmitResult({
-        success:
-          result.success,
-
-        passed:
-          result.passed_test_cases,
-
-        total:
-          result.total_test_cases,
-
-        score:
-          result.score,
-
-        isLastQuestion:
-          result.is_last_question,
-      });
-
-      setIsSubmitted(true);
-
-      setInterview(
-        (previous) =>
-          previous
-            ? {
-                ...previous,
-
-                current_question_number:
-                  result.question_number,
-              }
-            : previous,
-      );
-
-      if (result.is_last_question) {
-        setIsLoadingResult(true);
-
-        const finalResult =
-          await getCodingInterviewResult(
-            sessionId,
-          );
-
-        navigate(
-          "/coding-interview/result",
-          {
-            state: {
-              result: finalResult,
-            },
+        navigate("/home", {
+          replace: true,
+          state: {
+            codingInterviewEnded: true,
+            reason,
           },
-        );
+        });
+      }
+    };
 
+    terminateRef.current = (reason: string) => {
+      void terminate(reason);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        pendingTabChangeRef.current = true;
         return;
       }
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to submit your solution.",
-      );
-    } finally {
-      setIsSubmitting(false);
 
-      setIsLoadingResult(false);
-    }
-  }
-
-  async function handleNextQuestion() {
-    if (!sessionId) {
-      setError(
-        "Interview session not found.",
-      );
-
-      return;
-    }
-
-    if (!isSubmitted) {
-      setError(
-        "Please submit your solution before moving to the next question.",
-      );
-
-      return;
-    }
-
-    if (
-      submitResult?.isLastQuestion
-    ) {
-      return;
-    }
-
-    try {
-      setError(null);
-
-      setIsLoadingNext(true);
-
-      const nextQuestion =
-        await getNextCodingQuestion(
-          sessionId,
-        );
-
-      setCurrentQuestionData(
-        nextQuestion,
-      );
-
-      setCode(
-        nextQuestion.question
-          .starter_code || "",
-      );
-
-      setExecutionResult(
-        null,
-      );
-
-      setSubmitResult(
-        null,
-      );
-
-      setIsSubmitted(false);
-
-      const updatedInterview =
-        await getCodingInterview(
-          sessionId,
-        );
-
-      setInterview(
-        updatedInterview,
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load the next question.",
-      );
-    } finally {
-      setIsLoadingNext(false);
-    }
-  }
-
-  useEffect(() => {
-    function handleKeyboard(
-      event: KeyboardEvent,
-    ) {
       if (
-        (event.ctrlKey ||
-          event.metaKey) &&
-        event.key === "Enter"
+        document.visibilityState === "visible" &&
+        pendingTabChangeRef.current
       ) {
-        event.preventDefault();
+        pendingTabChangeRef.current = false;
 
-        void handleRunCode();
+        setFullscreenWarning(null);
+        setTerminationMessage(
+          "Your interview is terminated because you have changed the tab."
+        );
       }
+    };
+
+    const onFullscreenChange = () => {
+      if (
+        terminatedRef.current ||
+        disposed ||
+        document.fullscreenElement
+      ) {
+        return;
+      }
+
+      fullscreenExitCountRef.current += 1;
+      const count = fullscreenExitCountRef.current;
+
+      if (count >= 3) {
+        setFullscreenWarning(null);
+        setTerminationMessage(
+          "Your interview is terminated because you have closed the full screen for the 3rd time."
+        );
+      } else {
+        setFullscreenWarning(
+          `Warning ${count} of 2: You exited fullscreen. Return to fullscreen to continue. A third exit will end the interview.`
+        );
+      }
+    };
+
+    const onDisplayEnded = () => {
+      void terminate(
+        "The interview ended because screen sharing was stopped."
+      );
+    };
+
+    const onCameraEnded = () => {
+      void terminate(
+        "The interview ended because the camera was stopped."
+      );
+    };
+
+    if (!cameraTrack || !displayTrack) {
+      void terminate(
+        "The required camera or screen-sharing stream was unavailable."
+      );
+
+      return () => {
+        disposed = true;
+        terminateRef.current = () => undefined;
+
+        try {
+          camera?.getTracks().forEach((track) => track.stop());
+          display?.getTracks().forEach((track) => track.stop());
+        } catch {
+          // Continue cleanup if streams are already stopped.
+        }
+
+        stopInterviewSetupMedia();
+      };
     }
 
-    window.addEventListener(
-      "keydown",
-      handleKeyboard,
+    cameraTrack.addEventListener("ended", onCameraEnded);
+    displayTrack.addEventListener("ended", onDisplayEnded);
+
+    document.addEventListener(
+      "visibilitychange",
+      onVisibilityChange
+    );
+    document.addEventListener(
+      "fullscreenchange",
+      onFullscreenChange
     );
 
-    return () =>
-      window.removeEventListener(
-        "keydown",
-        handleKeyboard,
+    const video = videoRef.current;
+
+    if (video && camera) {
+      video.srcObject = camera;
+      video.muted = true;
+      video.playsInline = true;
+      void video.play().catch(() => undefined);
+    }
+
+    const runDetection = async (
+      now: number
+    ): Promise<void> => {
+      if (disposed || terminatedRef.current) return;
+
+      const target = videoRef.current;
+
+      if (
+        target &&
+        faceDetector &&
+        target.readyState >=
+          HTMLMediaElement.HAVE_CURRENT_DATA &&
+        !detectionBusy &&
+        now - lastDetectionAt >= 200
+      ) {
+        detectionBusy = true;
+        lastDetectionAt = now;
+
+        try {
+          const result = faceDetector.detectForVideo(
+            target,
+            now
+          );
+
+          if (result.detections.length > 0) {
+            noFaceSince = null;
+            setFaceCountdown(null);
+          } else {
+            if (noFaceSince === null) {
+              noFaceSince = now;
+            }
+
+            const elapsed = now - noFaceSince;
+            const remainingMs = Math.max(
+              0,
+              FACE_TIMEOUT_MS - elapsed
+            );
+            const remainingSeconds = Math.ceil(
+              remainingMs / 1000
+            );
+
+            setFaceCountdown(remainingSeconds);
+
+            if (remainingMs <= 0) {
+              setFaceCountdown(null);
+
+              void terminate(
+                "The interview ended because no face was detected for 5 consecutive seconds."
+              );
+            }
+          }
+        } catch {
+          // Ignore temporary detection or frame errors.
+        } finally {
+          detectionBusy = false;
+        }
+      }
+
+      if (!disposed && !terminatedRef.current) {
+        rafId = window.requestAnimationFrame((time) => {
+          void runDetection(time);
+        });
+      }
+    };
+
+    const initialiseDetector = async () => {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.0/wasm"
+        );
+
+        if (disposed || terminatedRef.current) return;
+
+        faceDetector = await FaceDetector.createFromOptions(
+          vision,
+          {
+            baseOptions: {
+              modelAssetPath:
+                "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+            },
+            runningMode: "VIDEO",
+            minDetectionConfidence: 0.5,
+          }
+        );
+
+        if (!disposed && !terminatedRef.current) {
+          rafId = window.requestAnimationFrame((time) => {
+            void runDetection(time);
+          });
+        }
+      } catch {
+        void terminate(
+          "Face detection could not start. Check your internet connection and restart the interview."
+        );
+      }
+    };
+
+    void initialiseDetector();
+
+    return () => {
+      disposed = true;
+
+      window.cancelAnimationFrame(rafId);
+      faceDetector?.close();
+
+      cameraTrack.removeEventListener(
+        "ended",
+        onCameraEnded
       );
+      displayTrack.removeEventListener(
+        "ended",
+        onDisplayEnded
+      );
+
+      document.removeEventListener(
+        "visibilitychange",
+        onVisibilityChange
+      );
+      document.removeEventListener(
+        "fullscreenchange",
+        onFullscreenChange
+      );
+
+      // Do not stop camera/display streams in effect cleanup. React StrictMode
+      // intentionally runs an extra setup/cleanup cycle in development; stopping
+      // streams here would invalidate the next setup and incorrectly end the interview.
+      // Media is stopped by terminate() when the interview actually ends.
+
+      const currentVideo = videoRef.current;
+
+      if (currentVideo) {
+        currentVideo.pause();
+        currentVideo.srcObject = null;
+      }
+
+      terminateRef.current = () => undefined;
+    };
   }, [
-    code,
-    currentQuestion,
+    navigate,
+    sessionId,
+    state?.preflightChecksPassed,
   ]);
 
-  async function handleExit() {
-    if (!sessionId) {
-      navigate("/home");
-
-      return;
-    }
-
-    try {
-      await abandonCodingInterview(
-        sessionId,
-      );
-    } catch {
-    }
-
-    navigate("/home");
-  }
-
-  if (
-    isLoading ||
-    !interviewState
-  ) {
-    return (
-      <div className="app-background min-h-screen flex items-center justify-center">
-        <div className="text-center">
-
-          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-violet-400" />
-
-          <p className="text-sm text-slate-400">
-            Preparing coding interview...
-          </p>
-
-        </div>
-      </div>
-    );
-  }
-
-  if (
-    !sessionId ||
-    !currentQuestion
-  ) {
-    return (
-      <div className="app-background min-h-screen flex items-center justify-center px-6">
-
-        <div className="max-w-md text-center">
-
-          <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-rose-400">
-            Coding Interview
-          </p>
-
-          <h1 className="mt-3 text-xl font-semibold text-white">
-            Unable to load interview
-          </h1>
-
-          <p className="mt-3 text-sm leading-6 text-slate-400">
-            {error ||
-              "The coding interview session could not be loaded."}
-          </p>
-
-          <button
-            type="button"
-            onClick={() =>
-              navigate(
-                "/coding-interview/setup",
-              )
-            }
-            className="mt-6 rounded-lg bg-violet-500 px-5 py-2.5 text-xs font-semibold text-white hover:bg-violet-400"
-          >
-            Start New Interview
-          </button>
-
-        </div>
-
-      </div>
-    );
-  }
-
-  const questionNumber =
-    currentQuestionData
-      ?.question_number ??
-    interview?.current_question_number ??
-    1;
-
-  const totalQuestions =
-    currentQuestionData
-      ?.total_questions ??
-    interview?.total_questions ??
-    interviewState.questionCount ??
-    0;
-
   return (
-    <div className="app-background min-h-screen text-white">
+    <>
+      <video
+        ref={videoRef}
+        className="pointer-events-none fixed h-px w-px opacity-0"
+        autoPlay
+        muted
+        playsInline
+        aria-hidden="true"
+      />
 
-      <div className="app-grid" />
+      {faceCountdown !== null && !terminationMessage && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="fixed left-1/2 top-3 z-[120] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 rounded-[20px] border border-rose-400/40 bg-[#4b071b] px-5 py-5 text-center text-white shadow-2xl"
+        >
+          <p className="text-sm font-semibold sm:text-base">
+            Face not detected. Move back into the camera view.
+          </p>
 
-      <header className="relative z-20 border-b border-white/[0.06] bg-black/20 backdrop-blur-xl">
+          <p className="mt-2 text-2xl font-bold sm:text-3xl">
+            Interview ends in {faceCountdown}s
+          </p>
+        </div>
+      )}
 
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-5 py-4">
+      {terminationMessage && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[130] flex items-center justify-center bg-black/80 p-5"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-red-400/40 bg-slate-950 p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold text-red-300">
+              Interview terminated
+            </h2>
 
-          <div className="flex items-center gap-4">
+            <p className="mt-3 text-sm leading-6 text-slate-200">
+              {terminationMessage}
+            </p>
 
             <button
               type="button"
               onClick={() =>
-                setShowExitConfirmation(
-                  true,
-                )
+                terminateRef.current(terminationMessage)
               }
-              className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-400 hover:text-white"
+              className="mt-5 w-full rounded-xl bg-red-500 px-4 py-3 text-sm font-semibold text-white hover:bg-red-400"
             >
-              ← Exit
+              End interview
             </button>
-
-            <div>
-
-              <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-600">
-                Coding Interview
-              </p>
-
-              <p className="mt-1 text-sm font-medium text-slate-200">
-
-                Question{" "}
-                {questionNumber}
-
-                {" "}of{" "}
-
-                {totalQuestions}
-
-              </p>
-
-            </div>
-
           </div>
-
-          <div className="flex items-center gap-3">
-
-            <span className="rounded-full border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-1 text-xs text-cyan-300">
-
-              {
-                LANGUAGE_LABELS[
-                  interviewState.language
-                ]
-              }
-
-            </span>
-
-            <span className="rounded-full border border-violet-400/20 bg-violet-400/[0.06] px-3 py-1 text-xs text-violet-300">
-
-              {
-                DIFFICULTY_LABELS[
-                  interviewState.difficulty
-                ]
-              }
-
-            </span>
-
-          </div>
-
         </div>
-
-      </header>
-
-      {error && (
-
-        <div className="relative z-20 border-b border-rose-400/20 bg-rose-400/[0.05] px-5 py-3">
-
-          <div className="mx-auto max-w-[1600px] text-sm text-rose-300">
-            {error}
-          </div>
-
-        </div>
-
       )}
 
-      <main className="relative z-10 mx-auto max-w-[1600px] px-4 py-5 lg:px-6">
-
-        <div className="grid min-h-[calc(100vh-130px)] gap-5 lg:grid-cols-2">
-
-          <section className="glass-panel flex min-h-[650px] flex-col overflow-hidden rounded-2xl">
-
-            <div className="border-b border-white/[0.06] px-6 py-5">
-
-              <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-slate-600">
-                Problem
-              </p>
-
-              <h1 className="mt-2 text-2xl font-semibold text-white">
-                {currentQuestion.title}
-              </h1>
-
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-6 py-6">
-
-              <h2 className="mb-3 text-sm font-semibold text-white">
-                Problem Statement
-              </h2>
-
-              <div className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
-                {
-                  currentQuestion.problem_statement
-                }
-              </div>
-
-              <div className="mt-8">
-
-                <h2 className="mb-3 text-sm font-semibold text-white">
-                  💡 Hints
-                </h2>
-
-                <div className="space-y-3">
-
-                  <div className="rounded-xl border border-amber-400/10 bg-amber-400/[0.04] p-4">
-
-                    <p className="mb-2 font-mono text-[9px] uppercase tracking-[0.15em] text-amber-400/70">
-                      Hint 1
-                    </p>
-
-                    <p className="text-sm leading-6 text-slate-300">
-                      {currentQuestion.hint_1}
-                    </p>
-
-                  </div>
-
-                  <div className="rounded-xl border border-amber-400/10 bg-amber-400/[0.04] p-4">
-
-                    <p className="mb-2 font-mono text-[9px] uppercase tracking-[0.15em] text-amber-400/70">
-                      Hint 2
-                    </p>
-
-                    <p className="text-sm leading-6 text-slate-300">
-                      {currentQuestion.hint_2}
-                    </p>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-              <div className="mt-8">
-
-                <h2 className="mb-3 text-sm font-semibold text-white">
-                  Input Format
-                </h2>
-
-                <div className="whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/20 p-4 font-mono text-xs leading-6 text-slate-400">
-                  {
-                    currentQuestion.input_format
-                  }
-                </div>
-
-              </div>
-
-              <div className="mt-6">
-
-                <h2 className="mb-3 text-sm font-semibold text-white">
-                  Output Format
-                </h2>
-
-                <div className="whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/20 p-4 font-mono text-xs leading-6 text-slate-400">
-                  {
-                    currentQuestion.output_format
-                  }
-                </div>
-
-              </div>
-
-              <div className="mt-6">
-
-                <h2 className="mb-3 text-sm font-semibold text-white">
-                  Constraints
-                </h2>
-
-                <div className="whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/20 p-4 font-mono text-xs leading-6 text-slate-400">
-                  {
-                    currentQuestion.constraints
-                  }
-                </div>
-
-              </div>
-
-              <div className="mt-6">
-
-                <h2 className="mb-3 text-sm font-semibold text-white">
-                  Examples
-                </h2>
-
-                {examples.length === 0 ? (
-
-                  <p className="text-sm text-slate-500">
-                    No examples available.
-                  </p>
-
-                ) : (
-
-                  <div className="space-y-4">
-
-                    {examples.map(
-                      (
-                        example,
-                        index,
-                      ) => (
-
-                        <div
-                          key={index}
-                          className="rounded-xl border border-white/[0.06] bg-black/20 p-4"
-                        >
-
-                          <p className="mb-3 font-mono text-[9px] uppercase tracking-[0.15em] text-slate-600">
-                            Example{" "}
-                            {index + 1}
-                          </p>
-
-                          <div className="grid gap-4 md:grid-cols-2">
-
-                            <div>
-
-                              <p className="mb-2 text-xs text-slate-600">
-                                Input
-                              </p>
-
-                              <pre className="whitespace-pre-wrap font-mono text-xs text-slate-400">
-                                {example.input}
-                              </pre>
-
-                            </div>
-
-                            <div>
-
-                              <p className="mb-2 text-xs text-slate-600">
-                                Output
-                              </p>
-
-                              <pre className="whitespace-pre-wrap font-mono text-xs text-slate-400">
-                                {example.output}
-                              </pre>
-
-                            </div>
-
-                          </div>
-
-                        </div>
-
-                      ),
-                    )}
-
-                  </div>
-
-                )}
-
-              </div>
-
-            </div>
-
-          </section>
-
-          <section className="flex min-h-[650px] flex-col overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0a0a0f]">
-
-            <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02] px-4 py-3">
-
-              <div className="flex items-center gap-3">
-
-                <div className="flex gap-1.5">
-
-                  <span className="h-2.5 w-2.5 rounded-full bg-red-400/60" />
-
-                  <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/60" />
-
-                  <span className="h-2.5 w-2.5 rounded-full bg-green-400/60" />
-
-                </div>
-
-                <span className="font-mono text-xs text-slate-500">
-
-                  {
-                    interviewState.language ===
-                    "python"
-                      ? "solution.py"
-                      : interviewState.language ===
-                        "javascript"
-                        ? "solution.js"
-                        : interviewState.language ===
-                          "java"
-                          ? "Solution.java"
-                          : "solution.cpp"
-                  }
-
-                </span>
-
-              </div>
-
-              <span className="text-xs text-slate-600">
-                Ctrl + Enter to run
-              </span>
-
-            </div>
-
-            <div className="relative min-h-[350px] flex-1">
-
-              <Editor
-                height="100%"
-                language={
-                  interviewState.language === "cpp"
-                    ? "cpp"
-                    : interviewState.language === "javascript"
-                      ? "javascript"
-                      : interviewState.language
-                }
-                theme="vs-dark"
-                value={code}
-                onChange={(value) => {
-                  setCode(value ?? "");
-                  setExecutionResult(null);
-                  setSubmitResult(null);
-                  setIsSubmitted(false);
-                }}
-                options={{
-                  readOnly: isSubmitted,
-                  automaticLayout: true,
-                  autoIndent: "full",
-                  formatOnPaste: true,
-                  formatOnType: true,
-                  detectIndentation: true,
-                  insertSpaces: true,
-                  tabSize: 4,
-                  bracketPairColorization: { enabled: true },
-                  guides: {
-                    indentation: true,
-                    bracketPairs: true,
-                  },
-                  minimap: { enabled: false },
-                  fontSize: 14,
-                  lineHeight: 24,
-                  fontFamily: '"Cascadia Code", "Fira Code", Consolas, monospace',
-                  wordWrap: "on",
-                  scrollBeyondLastLine: false,
-                  padding: { top: 16, bottom: 16 },
-                  renderLineHighlight: "line",
-                  scrollbar: {
-                    verticalScrollbarSize: 10,
-                    horizontalScrollbarSize: 10,
-                  },
-                }}
-                loading={
-                  <div className="flex h-full items-center justify-center bg-[#1e1e1e] text-sm text-slate-400">
-                    Loading code editor...
-                  </div>
-                }
-              />
-
-            </div>
-
-            <div className="border-t border-white/[0.06]">
-
-              <div className="border-b border-white/[0.05] px-4 py-3">
-
-                <div className="flex items-center justify-between">
-
-                  <div>
-
-                    <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-600">
-                      Test Results
-                    </p>
-
-                    {executionResult && (
-
-                      <p className="mt-1 text-xs text-slate-400">
-
-                        {
-                          executionResult.passed_test_cases
-                        }
-
-                        /
-
-                        {
-                          executionResult.total_test_cases
-                        }
-
-                        {" "}
-                        test cases passed
-
-                      </p>
-
-                    )}
-
-                  </div>
-
-                  {executionResult && (
-
-                    <span
-                      className={`rounded-full px-3 py-1 text-[10px] font-semibold ${
-                        executionResult.success
-                          ? "bg-emerald-400/10 text-emerald-300"
-                          : "bg-rose-400/10 text-rose-300"
-                      }`}
-                    >
-                      {
-                        executionResult.success
-                          ? "All Tests Passed"
-                          : "Some Tests Failed"
-                      }
-                    </span>
-
-                  )}
-
-                </div>
-
-              </div>
-
-              <div className="max-h-64 overflow-y-auto px-4 py-4">
-
-                {!executionResult ? (
-
-                  <div className="rounded-lg border border-white/[0.05] bg-white/[0.015] px-4 py-4 text-xs text-slate-600">
-                    Run your code to validate all test cases. Submission
-                    will be enabled only when every test case passes.
-                  </div>
-
-                ) : (
-
-                  <div className="space-y-3">
-
-                    {executionResult.results.map(
-                      (result) => (
-
-                        <div
-                          key={
-                            result.test_case_number
-                          }
-                          className={`rounded-xl border p-4 ${
-                            result.passed
-                              ? "border-emerald-400/20 bg-emerald-400/[0.04]"
-                              : "border-rose-400/20 bg-rose-400/[0.04]"
-                          }`}
-                        >
-
-                          <div className="flex items-center justify-between">
-
-                            <span className="text-xs font-medium text-slate-300">
-                              Test Case{" "}
-                              {
-                                result.test_case_number
-                              }
-                            </span>
-
-                            <span
-                              className={`text-[10px] font-semibold uppercase tracking-[0.1em] ${
-                                result.passed
-                                  ? "text-emerald-300"
-                                  : "text-rose-300"
-                              }`}
-                            >
-                              {
-                                result.passed
-                                  ? "Passed"
-                                  : "Failed"
-                              }
-                            </span>
-
-                          </div>
-
-                          <div className="mt-3 grid gap-4 md:grid-cols-3">
-
-                            <div>
-
-                              <p className="mb-1 text-[10px] uppercase tracking-wider text-slate-600">
-                                Input
-                              </p>
-
-                              <pre className="whitespace-pre-wrap font-mono text-xs text-slate-400">
-                                {
-                                  result.input_data
-                                }
-                              </pre>
-
-                            </div>
-
-                            <div>
-
-                              <p className="mb-1 text-[10px] uppercase tracking-wider text-slate-600">
-                                Expected
-                              </p>
-
-                              <pre className="whitespace-pre-wrap font-mono text-xs text-slate-400">
-                                {
-                                  result.expected_output
-                                }
-                              </pre>
-
-                            </div>
-
-                            <div>
-
-                              <p className="mb-1 text-[10px] uppercase tracking-wider text-slate-600">
-                                Actual
-                              </p>
-
-                              <pre className="whitespace-pre-wrap font-mono text-xs text-slate-400">
-                                {
-                                  result.actual_output ||
-                                  "—"
-                                }
-                              </pre>
-
-                            </div>
-
-                          </div>
-
-                          {result.error && (
-
-                            <div className="mt-3 rounded-lg bg-rose-400/[0.05] p-3">
-
-                              <p className="mb-1 text-[10px] uppercase tracking-wider text-rose-400">
-                                Error
-                              </p>
-
-                              <pre className="whitespace-pre-wrap font-mono text-xs leading-5 text-rose-300">
-                                {
-                                  result.error
-                                }
-                              </pre>
-
-                            </div>
-
-                          )}
-
-                          {result.execution_time_ms !==
-                            null && (
-
-                            <p className="mt-3 font-mono text-[10px] text-slate-600">
-
-                              Execution time:{" "}
-                              {
-                                result.execution_time_ms.toFixed(
-                                  2,
-                                )
-                              }
-                              ms
-
-                            </p>
-
-                          )}
-
-                        </div>
-
-                      ),
-                    )}
-
-                  </div>
-
-                )}
-
-              </div>
-
-            </div>
-
-            {submitResult && (
-
-              <div className="border-t border-white/[0.06] px-4 py-4">
-
-                <div
-                  className={`rounded-xl border p-4 ${
-                    submitResult.success
-                      ? "border-emerald-400/20 bg-emerald-400/[0.04]"
-                      : "border-rose-400/20 bg-rose-400/[0.04]"
-                  }`}
-                >
-
-                  <div className="flex items-center justify-between">
-
-                    <div>
-
-                      <p className="text-sm font-semibold text-white">
-                        {
-                          submitResult.success
-                            ? "Solution Accepted"
-                            : "Solution Submitted"
-                        }
-                      </p>
-
-                      <p className="mt-1 text-xs text-slate-400">
-                        {
-                          submitResult.passed
-                        }
-                        /
-                        {
-                          submitResult.total
-                        }
-                        {" "}
-                        test cases passed
-                      </p>
-
-                    </div>
-
-                    {submitResult.score !==
-                      undefined && (
-
-                      <span className="text-lg font-semibold text-violet-300">
-                        {
-                          submitResult.score
-                        }%
-                      </span>
-
-                    )}
-
-                  </div>
-
-                </div>
-
-              </div>
-
-            )}
-
-            <div className="flex items-center justify-between border-t border-white/[0.06] bg-white/[0.015] px-4 py-4">
-
-              <div>
-
-                {isSubmitted && (
-                  <span className="text-[10px] uppercase tracking-wider text-emerald-300">
-                    ✓ Submitted
-                  </span>
-                )}
-
-              </div>
-
-              <div className="flex gap-3">
-
-                <button
-                  type="button"
-                  onClick={
-                    handleRunCode
-                  }
-                  disabled={
-                    isRunning ||
-                    isSubmitting ||
-                    isSubmitted
-                  }
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-5 py-2.5 text-xs font-semibold text-slate-300 hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isRunning
-                    ? "Running..."
-                    : "▶ Run Code"}
-                </button>
-
-                {!isSubmitted && (
-
-                  <button
-                    type="button"
-                    onClick={
-                      handleSubmit
-                    }
-                    disabled={
-                      isRunning ||
-                      isSubmitting ||
-                      !allTestsPassed
-                    }
-                    className={`rounded-lg px-5 py-2.5 text-xs font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50 ${
-                      allTestsPassed
-                        ? "bg-emerald-500 shadow-emerald-500/20 hover:bg-emerald-400"
-                        : "bg-slate-700/60 shadow-none"
-                    }`}
-                  >
-                    {isSubmitting
-                      ? "Submitting..."
-                      : allTestsPassed
-                        ? "✓ Submit Solution"
-                        : "✓ Pass All Tests to Submit"}
-                  </button>
-
-                )}
-
-                {isSubmitted &&
-                  !submitResult?.isLastQuestion && (
-
-                  <button
-                    type="button"
-                    onClick={
-                      handleNextQuestion
-                    }
-                    disabled={
-                      isLoadingNext
-                    }
-                    className="rounded-lg bg-violet-500 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-violet-500/20 hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isLoadingNext
-                      ? "Loading..."
-                      : "Next Question →"}
-                  </button>
-
-                )}
-
-                {isSubmitted &&
-                  submitResult?.isLastQuestion && (
-
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!sessionId) {
-                        return;
-                      }
-
-                      try {
-                        setIsLoadingResult(
-                          true,
-                        );
-
-                        const result =
-                          await getCodingInterviewResult(
-                            sessionId,
-                          );
-
-                        navigate(
-                          "/coding-interview/result",
-                          {
-                            state: {
-                              result,
-                            },
-                          },
-                        );
-                      } catch (err) {
-                        setError(
-                          err instanceof Error
-                            ? err.message
-                            : "Unable to load the final result.",
-                        );
-                      } finally {
-                        setIsLoadingResult(
-                          false,
-                        );
-                      }
-                    }}
-                    disabled={
-                      isLoadingResult
-                    }
-                    className="rounded-lg bg-violet-500 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-violet-500/20 hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isLoadingResult
-                      ? "Loading Result..."
-                      : "View Final Result →"}
-                  </button>
-
-                )}
-
-              </div>
-
-            </div>
-
-          </section>
-
-        </div>
-
-      </main>
-
-      {showExitConfirmation && (
-
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6 backdrop-blur-sm">
-
-          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111116] p-7 shadow-2xl">
-
-            <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-rose-400">
-              Leave Interview
-            </p>
-
-            <h2 className="mt-3 text-xl font-semibold text-white">
-              Exit coding interview?
+      {fullscreenWarning && !terminationMessage && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-5"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-amber-300/30 bg-slate-950 p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold text-amber-200">
+              Fullscreen warning
             </h2>
 
-            <p className="mt-3 text-sm leading-6 text-slate-400">
-              Your current code will not be submitted.
-              Leaving the interview will mark this
-              coding interview as abandoned.
+            <p className="mt-3 text-sm leading-6 text-slate-300">
+              {fullscreenWarning}
             </p>
 
-            <div className="mt-7 flex justify-end gap-3">
-
-              <button
-                type="button"
-                onClick={() =>
-                  setShowExitConfirmation(
-                    false,
-                  )
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  if (!document.fullscreenElement) {
+                    await document.documentElement.requestFullscreen();
+                  }
+                } catch {
+                  // The browser may refuse the fullscreen request.
                 }
-                className="rounded-lg border border-white/10 px-4 py-2.5 text-xs text-slate-400 hover:text-white"
-              >
-                Continue
-              </button>
 
-              <button
-                type="button"
-                onClick={
-                  handleExit
-                }
-                className="rounded-lg bg-rose-500 px-4 py-2.5 text-xs font-semibold text-white hover:bg-rose-400"
-              >
-                Exit Interview
-              </button>
-
-            </div>
-
+                setFullscreenWarning(null);
+              }}
+              className="mt-5 w-full rounded-xl bg-violet-400 px-4 py-3 text-sm font-semibold text-slate-950 hover:bg-violet-300"
+            >
+              Return to interview
+            </button>
           </div>
-
         </div>
-
       )}
 
-    </div>
+      <CodingInterview />
+    </>
   );
 }

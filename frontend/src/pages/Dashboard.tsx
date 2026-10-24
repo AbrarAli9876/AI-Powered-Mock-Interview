@@ -141,9 +141,32 @@ function toNumericScore(value: unknown): number | null {
     return null;
   }
 
-  const numericValue =
-    typeof value === "number" ? value : Number(value);
+  // Some API responses may wrap a score in an object instead of returning
+  // the number directly. Safely unwrap common score fields.
+  if (typeof value === "object") {
+    const scoreObject = value as Record<string, unknown>;
+    const nestedValue =
+      scoreObject.overall_score ??
+      scoreObject.overallScore ??
+      scoreObject.score ??
+      scoreObject.value;
 
+    if (nestedValue === value || nestedValue === undefined) {
+      return null;
+    }
+
+    return toNumericScore(nestedValue);
+  }
+
+  if (typeof value !== "number" && typeof value !== "string") {
+    return null;
+  }
+
+  if (typeof value === "string" && value.trim() === "") {
+    return null;
+  }
+
+  const numericValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
@@ -303,7 +326,10 @@ export default function Dashboard() {
     () =>
       [...completedInterviews]
         .reverse()
-        .filter((interview) => interview.overall_score !== null),
+        .filter(
+          (interview) =>
+            toNumericScore(interview.overall_score) !== null,
+        ),
     [completedInterviews],
   );
 
@@ -374,13 +400,17 @@ export default function Dashboard() {
             )}
           </div>
 
-          <button
-            className="dashboard-primary-button"
-            onClick={() => navigate("/interviews/new")}
-          >
-            Start New Interview
-            <span>→</span>
-          </button>
+          <div className="dashboard-header-actions">
+            <button
+              type="button"
+              className="dashboard-primary-button"
+              onClick={() => navigate("/home")}
+              aria-label="Back to home"
+            >
+              <span aria-hidden="true">←</span>
+              Back to Home
+            </button>
+          </div>
         </header>
 
         {error && (

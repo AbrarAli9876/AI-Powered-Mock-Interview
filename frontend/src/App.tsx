@@ -16,8 +16,10 @@ import InterviewPreflight from "./pages/InterviewPreflight";
 import InterviewRoom from "./pages/InterviewRoom";
 
 import CodingInterviewSetup from "./pages/CodingInterviewSetup";
+import CodingInterviewPreflight from "./pages/CodingInterviewPreflight";
 import CodingInterviewRoom from "./pages/CodingInterviewRoom";
-
+import CodingInterviewHistory from "./pages/CodingInterviewHistory";
+import CodingInterviewResult from "./pages/CodingInterviewResult";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 
 function App() {
@@ -36,13 +38,34 @@ function App() {
 
         {/* Technical interview setup and mandatory sequential checks */}
         <Route path="/interviews/new" element={<InterviewSetup />} />
-        <Route path="/interviews/preflight/:step" element={<InterviewPreflight />} />
+        <Route
+          path="/interviews/preflight/:step"
+          element={<InterviewPreflight />}
+        />
         <Route path="/interviews/:sessionId" element={<InterviewRoom />} />
-        <Route path="/interviews/:sessionId/result" element={<InterviewResult />} />
+        <Route
+          path="/interviews/:sessionId/result"
+          element={<InterviewResult />}
+        />
 
-        {/* Coding interview routes are intentionally unchanged */}
-        <Route path="/coding-interview/new" element={<CodingInterviewSetup />} />
+        {/* Coding interview setup and mandatory sequential checks */}
+        <Route
+          path="/coding-interview/new"
+          element={<CodingInterviewSetup />}
+        />
+        <Route
+          path="/coding-interview/preflight/:step"
+          element={<CodingInterviewPreflight />}
+        />
         <Route path="/coding-interview" element={<CodingInterviewRoom />} />
+        <Route
+          path="/coding-interview/history"
+          element={<CodingInterviewHistory />}
+        />
+        <Route
+          path="/coding-interview/results/:id"
+          element={<CodingInterviewResult />}
+        />
       </Route>
 
       {/* Admin-protected routes */}
