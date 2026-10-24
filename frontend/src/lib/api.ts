@@ -156,6 +156,9 @@ export interface Question {
 
   question_text: string;
 
+  /** Optional metadata when supplied by the backend. */
+  companies?: string[];
+
   created_at: string;
 
   updated_at: string;
@@ -403,19 +406,16 @@ export async function getTopics():
 export async function createInterview(
   topicId: number,
   startingDifficulty: Difficulty,
+  questionCount: 3 | 10 | 15 | 20 = 10,
 ): Promise<Interview> {
-
   return request<Interview>(
     "/interviews",
     {
       method: "POST",
-
       body: JSON.stringify({
-        topic_id:
-          topicId,
-
-        starting_difficulty:
-          startingDifficulty,
+        topic_id: topicId,
+        starting_difficulty: startingDifficulty,
+        question_count: questionCount,
       }),
     },
   );
@@ -691,23 +691,6 @@ export async function getNextCodingQuestion(
 }
 
 
-export interface CodingInterviewSkipResponse {
-  is_last_question: boolean;
-  question_number: number;
-  next_question: CodingInterviewQuestionResponse | null;
-}
-
-
-export async function skipCodingQuestion(
-  sessionId: number,
-): Promise<CodingInterviewSkipResponse> {
-  return request<CodingInterviewSkipResponse>(
-    `/coding-interviews/${sessionId}/skip-question`,
-    { method: "POST" },
-  );
-}
-
-
 export async function completeCodingInterview(
   sessionId: number,
 ): Promise<CodingInterview> {
@@ -852,11 +835,7 @@ export interface CodingInterviewResult {
 
   attempted_questions: number;
 
-  solved_questions: number;
-
   unanswered_questions: number;
-
-  skipped_questions: number;
 
   total_test_cases: number;
 

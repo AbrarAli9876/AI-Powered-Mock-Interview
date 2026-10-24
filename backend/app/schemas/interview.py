@@ -11,7 +11,7 @@ from app.enums.question_difficulty import QuestionDifficulty
 class InterviewCreate(BaseModel):
     topic_id: int = Field(..., gt=0)
     starting_difficulty: QuestionDifficulty
-    question_count: Literal[10, 15, 20] = 10
+    question_count: Literal[3, 10, 15, 20] = 10
 
 
 class InterviewUpdate(BaseModel):

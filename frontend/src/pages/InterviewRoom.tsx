@@ -68,6 +68,7 @@ export default function InterviewRoom() {
   const numericSessionId = Number(sessionId);
   const [interview, setInterview] = useState<Interview | null>(null);
   const [question, setQuestion] = useState<Question | null>(null);
+  const questionCompanies = (question as (Question & { companies?: string[] }) | null)?.companies;
   const [answer, setAnswer] = useState("");
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
   const [roomState, setRoomState] = useState<RoomState>("loading");
@@ -294,6 +295,34 @@ export default function InterviewRoom() {
   };
   /*
    * ---------------------------------------------------------
+   * Release camera, screen sharing, and fullscreen when the
+   * candidate completes or voluntarily exits the interview.
+   * ---------------------------------------------------------
+   */
+  const releaseInterviewMedia = async () => {
+    const cameraStream = getInterviewCameraStream();
+    const displayStream = getInterviewDisplayStream();
+
+    try {
+      cameraStream?.getTracks().forEach((track) => track.stop());
+      displayStream?.getTracks().forEach((track) => track.stop());
+    } catch {
+      // Continue cleanup if a track has already stopped.
+    } finally {
+      stopInterviewSetupMedia();
+
+      if (document.fullscreenElement) {
+        try {
+          await document.exitFullscreen();
+        } catch {
+          // The browser may already have exited fullscreen.
+        }
+      }
+    }
+  };
+
+  /*
+   * ---------------------------------------------------------
    * Complete interview.
    * ---------------------------------------------------------
    */
@@ -310,14 +339,7 @@ export default function InterviewRoom() {
       securityActiveRef.current = false;
       sessionStorage.removeItem("technicalInterviewPreflightVerified");
       sessionStorage.removeItem("technicalInterviewPreflightStage");
-      stopInterviewSetupMedia();
-      if (document.fullscreenElement) {
-        try {
-          await document.exitFullscreen();
-        } catch {
-          // Browser may already have exited fullscreen.
-        }
-      }
+      await releaseInterviewMedia();
       try {
         // The backend may need a moment to generate the final AI report.
         await getInterviewResult(interview.id);
@@ -457,14 +479,7 @@ export default function InterviewRoom() {
       securityActiveRef.current = false;
       sessionStorage.removeItem("technicalInterviewPreflightVerified");
       sessionStorage.removeItem("technicalInterviewPreflightStage");
-      stopInterviewSetupMedia();
-      if (document.fullscreenElement) {
-        try {
-          await document.exitFullscreen();
-        } catch {
-          // Browser may already have exited fullscreen.
-        }
-      }
+      await releaseInterviewMedia();
       navigate("/home");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to abandon the interview.");
@@ -705,7 +720,7 @@ export default function InterviewRoom() {
   }
   const progress =
     interview.total_questions > 0
-      ? Math.min((interview.current_question_number / interview.total_questions) * 100, 100)
+      ? Math.min((Math.max(1, interview.current_question_number) / interview.total_questions) * 100, 100)
       : 0;
   const isSubmitting = roomState === "submitting";
   const isEvaluated = roomState === "evaluated";
@@ -823,7 +838,7 @@ export default function InterviewRoom() {
             <div className="rounded-3xl border border-white/[0.06] bg-white/[0.025] p-6 sm:p-8">
               <div className="flex items-center justify-between">
                 <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-600">
-                  Question {interview.current_question_number}
+                  Question {Math.max(1, interview.current_question_number)}
                 </div>
                 <span className="rounded-full border border-white/[0.07] px-3 py-1 font-mono text-[9px] uppercase tracking-wider text-slate-500">
                   {difficultyLabel[currentDifficulty]}
@@ -832,6 +847,26 @@ export default function InterviewRoom() {
               <h2 className="mt-6 font-display text-2xl font-semibold leading-tight tracking-tight text-white sm:text-3xl">
                 {question.question_text}
               </h2>
+              {questionCompanies && questionCompanies.length > 0 && (
+                <div className="mt-5 border-t border-white/[0.06] pt-4">
+                  <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-500">
+                    Frequently reported at
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {questionCompanies.map((company: string) => (
+                      <span
+                        key={company}
+                        className="rounded-full border border-violet-400/20 bg-violet-400/[0.08] px-3 py-1.5 text-xs font-medium text-violet-200"
+                      >
+                        {company}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[10px] leading-4 text-slate-600">
+                    Company attribution is based on commonly reported interview experiences, not an official company question bank.
+                  </p>
+                </div>
+              )}
             </div>
             {/* Answer */}
             <div className="mt-6 rounded-3xl border border-white/[0.06] bg-white/[0.025] p-6 sm:p-8">
@@ -1048,14 +1083,20 @@ export default function InterviewRoom() {
                     {evaluation.improvements}
                   </p>
                 </div>
-                {/* Continue */}
+                {/* On the final question, take the candidate directly to the results. */}
                 <button
                   type="button"
-                  onClick={() => void handleNextQuestion()}
+                  onClick={() =>
+                    void (interview.current_question_number >= interview.total_questions
+                      ? handleCompleteInterview()
+                      : handleNextQuestion())
+                  }
                   disabled={isFinishing}
                   className="mt-7 flex w-full items-center justify-center gap-3 rounded-2xl bg-violet-400 px-6 py-4 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5 hover:bg-violet-300 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Continue to next question
+                  {interview.current_question_number >= interview.total_questions
+                    ? "View Results"
+                    : "Continue to next question"}
                   <span aria-hidden="true">→</span>
                 </button>
               </div>

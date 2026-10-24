@@ -15,7 +15,7 @@ import {
 type Setup = {
   topicId: number;
   startingDifficulty: Difficulty;
-  questionCount: 10 | 15 | 20;
+  questionCount: 3 | 10 | 15 | 20;
 };
 
 type PreflightStep = "fullscreen" | "camera" | "screen" | "ready";
@@ -57,7 +57,7 @@ function readSetup(): Setup | null {
     if (
       !Number.isInteger(parsed.topicId) ||
       !["easy", "medium", "hard"].includes(parsed.startingDifficulty) ||
-      ![10, 15, 20].includes(parsed.questionCount)
+      ![3, 10, 15, 20].includes(parsed.questionCount)
     ) return null;
     return parsed;
   } catch {
@@ -381,7 +381,7 @@ export default function InterviewPreflight() {
     try {
       sessionStorage.setItem("technicalInterviewPreflightVerified", "true");
       sessionStorage.removeItem("technicalInterviewPreflightStage");
-      const interview = await createInterview(setup.topicId, setup.startingDifficulty);
+      const interview = await createInterview(setup.topicId, setup.startingDifficulty, setup.questionCount);
       navigate(`/interviews/${interview.id}`, { replace: true, state: { preflightChecksPassed: true } });
     } catch (err) {
       sessionStorage.removeItem("technicalInterviewPreflightVerified");

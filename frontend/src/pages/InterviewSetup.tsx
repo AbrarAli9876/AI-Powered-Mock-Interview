@@ -7,12 +7,16 @@ import {
   type Topic,
 } from "../lib/api";
 
-type QuestionCount = 10 | 15 | 20;
+type QuestionCount = 3 | 10 | 15 | 20;
 
 const questionCounts: {
   value: QuestionCount;
   description: string;
 }[] = [
+  {
+    value: 3,
+    description: "Quick practice session",
+  },
   {
     value: 10,
     description: "Short practice session",
