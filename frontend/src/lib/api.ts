@@ -690,6 +690,23 @@ export async function getNextCodingQuestion(
   );
 }
 
+export interface CodingInterviewSkipResponse {
+  is_last_question: boolean;
+  question_number: number;
+  next_question: CodingInterviewQuestionResponse | null;
+}
+
+export async function skipCodingQuestion(
+  sessionId: number,
+): Promise<CodingInterviewSkipResponse> {
+  return request<CodingInterviewSkipResponse>(
+    `/coding-interviews/${sessionId}/skip-question`,
+    {
+      method: "POST",
+    },
+  );
+}
+
 
 export async function completeCodingInterview(
   sessionId: number,

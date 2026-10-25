@@ -442,7 +442,6 @@ export default function InterviewRoom() {
       securityActiveRef.current = false;
       setIsSecurityTerminated(true);
       setError(reason);
-      setRoomState("completing");
       try {
         await abandonInterview(currentInterview.id);
       } catch {
@@ -763,8 +762,10 @@ export default function InterviewRoom() {
               Progress
             </span>
             <span className="font-mono text-[10px] text-slate-500">
-              {Math.min(interview.current_question_number, interview.total_questions)} /{" "}
-              {interview.total_questions}
+              {Math.min(
+              Math.max(1, interview.current_question_number),
+              interview.total_questions
+              )} / {interview.total_questions}
             </span>
           </div>
           <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/[0.06]">
@@ -985,17 +986,34 @@ export default function InterviewRoom() {
                   </span>
                 </div>
               )}
-              {/* Submit */}
+              {/* Submit answer or view results after the final question is evaluated */}
               <button
                 type="button"
-                onClick={() => void handleSubmitAnswer()}
-                disabled={isSubmitting || isEvaluated || isCompleting || !answer.trim()}
+                onClick={() =>
+                  isEvaluated &&
+                  interview.current_question_number >= interview.total_questions
+                    ? void handleCompleteInterview()
+                    : void handleSubmitAnswer()
+                }
+                disabled={
+                  isSubmitting ||
+                  isCompleting ||
+                  (isEvaluated
+                    ? interview.current_question_number < interview.total_questions
+                    : !answer.trim())
+                }
                 className="mt-5 flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-6 py-4 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5 hover:bg-slate-100 active:translate-y-0 disabled:cursor-not-allowed disabled:bg-white/40 disabled:text-slate-800"
               >
                 {isSubmitting ? (
                   <>
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-900/20 border-t-slate-900" />
                     Evaluating answer...
+                  </>
+                ) : isEvaluated &&
+                  interview.current_question_number >= interview.total_questions ? (
+                  <>
+                    View Results
+                    <span aria-hidden="true">→</span>
                   </>
                 ) : (
                   <>
@@ -1083,22 +1101,18 @@ export default function InterviewRoom() {
                     {evaluation.improvements}
                   </p>
                 </div>
-                {/* On the final question, take the candidate directly to the results. */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    void (interview.current_question_number >= interview.total_questions
-                      ? handleCompleteInterview()
-                      : handleNextQuestion())
-                  }
-                  disabled={isFinishing}
-                  className="mt-7 flex w-full items-center justify-center gap-3 rounded-2xl bg-violet-400 px-6 py-4 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5 hover:bg-violet-300 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {interview.current_question_number >= interview.total_questions
-                    ? "View Results"
-                    : "Continue to next question"}
-                  <span aria-hidden="true">→</span>
-                </button>
+                {/* Continue here for non-final questions; final results are opened from the answer action. */}
+                {interview.current_question_number < interview.total_questions && (
+                  <button
+                    type="button"
+                    onClick={() => void handleNextQuestion()}
+                    disabled={isFinishing}
+                    className="mt-7 flex w-full items-center justify-center gap-3 rounded-2xl bg-violet-400 px-6 py-4 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5 hover:bg-violet-300 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Continue to next question
+                    <span aria-hidden="true">→</span>
+                  </button>
+                )}
               </div>
             )}
             {/* Completing */}
