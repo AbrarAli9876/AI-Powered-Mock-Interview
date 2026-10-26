@@ -58,3 +58,33 @@ export function logout(): void {
   localStorage.removeItem("access_token");
   localStorage.removeItem("user");
 }
+
+export interface MessageResponse {
+  message: string;
+}
+
+export async function requestPasswordReset(
+  email: string
+): Promise<MessageResponse> {
+  const response = await api.post<MessageResponse>(
+    "/auth/forgot-password",
+    { email }
+  );
+
+  return response.data;
+}
+
+export async function resetPassword(
+  token: string,
+  new_password: string
+): Promise<MessageResponse> {
+  const response = await api.post<MessageResponse>(
+    "/auth/reset-password",
+    {
+      token,
+      new_password,
+    }
+  );
+
+  return response.data;
+}

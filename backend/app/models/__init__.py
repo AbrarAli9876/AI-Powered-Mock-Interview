@@ -1,6 +1,7 @@
 from app.models.base import Base
 
 from app.models.user import User
+from app.models.password_reset_token import PasswordResetToken
 from app.models.topic import Topic
 from app.models.question import Question
 
@@ -22,6 +23,7 @@ from app.models.coding_interview_answer import (
 __all__ = [
     "Base",
     "User",
+    "PasswordResetToken",
     "Topic",
     "Question",
     "InterviewSession",

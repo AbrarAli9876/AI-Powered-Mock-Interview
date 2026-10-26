@@ -6,6 +6,8 @@ import LandingPage from "./pages/LandingPage";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 import Dashboard from "./pages/Dashboard";
 import InterviewResult from "./pages/InterviewResult";
@@ -29,6 +31,14 @@ function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route
+        path="/forgot-password"
+        element={<ForgotPassword />}
+      />
+      <Route
+        path="/reset-password"
+        element={<ResetPassword />}
+      />
 
       {/* User-protected routes */}
       <Route element={<ProtectedRoute requiredRole="user" />}>
@@ -36,19 +46,25 @@ function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/profile" element={<Profile />} />
 
-        {/* Technical interview setup and mandatory sequential checks */}
-        <Route path="/interviews/new" element={<InterviewSetup />} />
+        {/* Technical interview */}
+        <Route
+          path="/interviews/new"
+          element={<InterviewSetup />}
+        />
         <Route
           path="/interviews/preflight/:step"
           element={<InterviewPreflight />}
         />
-        <Route path="/interviews/:sessionId" element={<InterviewRoom />} />
+        <Route
+          path="/interviews/:sessionId"
+          element={<InterviewRoom />}
+        />
         <Route
           path="/interviews/:sessionId/result"
           element={<InterviewResult />}
         />
 
-        {/* Coding interview setup and mandatory sequential checks */}
+        {/* Coding interview */}
         <Route
           path="/coding-interview/new"
           element={<CodingInterviewSetup />}
@@ -57,7 +73,10 @@ function App() {
           path="/coding-interview/preflight/:step"
           element={<CodingInterviewPreflight />}
         />
-        <Route path="/coding-interview" element={<CodingInterviewRoom />} />
+        <Route
+          path="/coding-interview"
+          element={<CodingInterviewRoom />}
+        />
         <Route
           path="/coding-interview/history"
           element={<CodingInterviewHistory />}
@@ -70,10 +89,16 @@ function App() {
 
       {/* Admin-protected routes */}
       <Route element={<ProtectedRoute requiredRole="admin" />}>
-        <Route path="/admin/dashboard" element={<AdminDashboard />} />
+        <Route
+          path="/admin/dashboard"
+          element={<AdminDashboard />}
+        />
       </Route>
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route
+        path="*"
+        element={<Navigate to="/" replace />}
+      />
     </Routes>
   );
 }

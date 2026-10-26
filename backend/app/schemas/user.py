@@ -6,9 +6,7 @@ from app.enums.user_role import UserRole
 
 
 class UserRegister(BaseModel):
-    """
-    Schema for user registration requests.
-    """
+    """Schema for user registration requests."""
 
     full_name: str = Field(
         ...,
@@ -28,9 +26,7 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
-    """
-    Schema for user login requests.
-    """
+    """Schema for user login requests."""
 
     email: EmailStr
 
@@ -42,9 +38,7 @@ class UserLogin(BaseModel):
 
 
 class UserResponse(BaseModel):
-    """
-    Schema returned to the client.
-    """
+    """Schema returned to the client."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -58,18 +52,36 @@ class UserResponse(BaseModel):
 
 
 class Token(BaseModel):
-    """
-    JWT access token response.
-    """
+    """JWT access token response."""
 
     access_token: str
     token_type: str = "bearer"
 
 
 class TokenPayload(BaseModel):
-    """
-    Decoded JWT payload.
-    """
+    """Decoded JWT payload."""
 
     sub: str
     exp: int
+
+
+class PasswordResetRequest(BaseModel):
+    """Request a password-reset email."""
+
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    """Set a new password using a reset token."""
+
+    token: str = Field(
+        ...,
+        min_length=20,
+        max_length=512,
+    )
+
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+    )

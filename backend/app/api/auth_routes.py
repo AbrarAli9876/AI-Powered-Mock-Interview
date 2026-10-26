@@ -10,8 +10,11 @@ from app.schemas.user import (
     UserLogin,
     UserRegister,
     UserResponse,
+    PasswordResetRequest,
+    PasswordResetConfirm,
 )
 from app.services.auth_service import AuthService
+from app.services.password_reset_service import PasswordResetService
 
 
 router = APIRouter(
@@ -29,9 +32,7 @@ def register(
     user: UserRegister,
     db: Session = Depends(get_db),
 ):
-    """
-    Register a new user.
-    """
+    """Register a new user."""
 
     auth_service = AuthService(db)
 
@@ -46,9 +47,7 @@ def login(
     user: UserLogin,
     db: Session = Depends(get_db),
 ):
-    """
-    Authenticate a user using JSON credentials.
-    """
+    """Authenticate a user using JSON credentials."""
 
     auth_service = AuthService(db)
 
@@ -63,9 +62,7 @@ def token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    """
-    OAuth2-compatible login endpoint used by Swagger.
-    """
+    """OAuth2-compatible login endpoint used by Swagger."""
 
     login_data = UserLogin(
         email=form_data.username,
@@ -84,8 +81,33 @@ def token(
 def get_me(
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Return the currently authenticated user.
-    """
+    """Return the currently authenticated user."""
 
     return current_user
+
+
+@router.post("/forgot-password")
+def forgot_password(
+    request: PasswordResetRequest,
+    db: Session = Depends(get_db),
+):
+    """Send password-reset instructions without revealing account existence."""
+
+    service = PasswordResetService(db)
+
+    return service.request_reset(str(request.email))
+
+
+@router.post("/reset-password")
+def reset_password(
+    request: PasswordResetConfirm,
+    db: Session = Depends(get_db),
+):
+    """Validate a single-use reset token and save the new password."""
+
+    service = PasswordResetService(db)
+
+    return service.reset_password(
+        request.token,
+        request.new_password,
+    )
