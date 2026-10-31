@@ -1,8 +1,10 @@
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
 from app.models.base import Base
+from app.db_ssl import get_database_connect_args
 
 
 # =========================================================
@@ -13,6 +15,7 @@ engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
     echo=False,
+    connect_args=get_database_connect_args(),
 )
 
 
