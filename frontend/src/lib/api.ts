@@ -102,7 +102,8 @@ export type CodingLanguage =
   | "python"
   | "javascript"
   | "java"
-  | "cpp";
+  | "cpp"
+  | "sql";
 
 
 /* =========================================================

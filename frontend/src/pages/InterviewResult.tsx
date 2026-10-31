@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { invalidateTechnicalInterviewCache } from "../lib/dataCache";
 import {
   getInterviewResult,
   getTopics,
@@ -140,6 +141,8 @@ export default function InterviewResult() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    sessionStorage.removeItem("technicalInterviewViewingResults");
+    invalidateTechnicalInterviewCache();
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
 

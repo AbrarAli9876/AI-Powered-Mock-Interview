@@ -14,6 +14,7 @@ import {
   type Question,
 } from "../lib/api";
 import AIOrb from "../components/interview/AIOrb";
+import { invalidateTechnicalInterviewCache } from "../lib/dataCache";
 import {
   getInterviewCameraStream,
   getInterviewDisplayStream,
@@ -75,6 +76,8 @@ export default function InterviewRoom() {
   const [error, setError] = useState<string | null>(null);
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [isLoadingNext, setIsLoadingNext] = useState(false);
+  const [questionNumber, setQuestionNumber] = useState(1);
   const [fullscreenWarningCount, setFullscreenWarningCount] = useState(0);
   const [showFullscreenWarning, setShowFullscreenWarning] = useState(false);
   const [showFullscreenGate, setShowFullscreenGate] = useState(false);
@@ -84,6 +87,7 @@ export default function InterviewRoom() {
   const pendingTabChangeRef = useRef(false);
   const securityTerminationRef = useRef(false);
   const securityActiveRef = useRef(false);
+  const intentionalCompletionRef = useRef(false);
   const interviewRef = useRef<Interview | null>(null);
   useEffect(() => {
     interviewRef.current = interview;
@@ -254,6 +258,18 @@ export default function InterviewRoom() {
           navigate(`/interviews/${numericSessionId}/result`, { replace: true });
           return;
         }
+        const answeredCount = interviewData.current_question_number || 0;
+        const currentQNum = Math.min(
+          Math.max(1, interviewData.total_questions),
+          Math.max(1, answeredCount + 1),
+        );
+        setQuestionNumber(currentQNum);
+
+        if (answeredCount >= interviewData.total_questions) {
+          navigate(`/interviews/${numericSessionId}/result`, { replace: true });
+          return;
+        }
+
         const questionData = await getNextQuestion(numericSessionId);
         setQuestion(questionData);
         setRoomState("ready");
@@ -264,35 +280,6 @@ export default function InterviewRoom() {
     };
     void loadInterview();
   }, [sessionId, numericSessionId, navigate]);
-  /*
-   * ---------------------------------------------------------
-   * Submit candidate answer.
-   * ---------------------------------------------------------
-   */
-  const handleSubmitAnswer = async () => {
-    if (!question || !interview) {
-      return;
-    }
-    const trimmedAnswer = answer.trim();
-    if (!trimmedAnswer) {
-      setError("Please enter an answer before submitting.");
-      return;
-    }
-    if (isListening) {
-      handleStopListening();
-    }
-    try {
-      setError(null);
-      setSpeechError(null);
-      setRoomState("submitting");
-      const result = await submitAnswer(interview.id, question.id, trimmedAnswer);
-      setEvaluation(result);
-      setRoomState("evaluated");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to evaluate your answer.");
-      setRoomState("ready");
-    }
-  };
   /*
    * ---------------------------------------------------------
    * Release camera, screen sharing, and fullscreen when the
@@ -323,76 +310,107 @@ export default function InterviewRoom() {
 
   /*
    * ---------------------------------------------------------
-   * Complete interview.
+   * Submit candidate answer and display individual evaluation.
    * ---------------------------------------------------------
    */
-  const handleCompleteInterview = async () => {
-    if (!interview) {
+  const handleSubmitAnswer = async () => {
+    if (!question || !interview || roomState !== "ready") {
+      return;
+    }
+    const trimmedAnswer = answer.trim();
+    if (!trimmedAnswer) {
+      setError("Please enter an answer before submitting.");
+      return;
+    }
+    if (isListening) {
+      handleStopListening();
+    }
+    try {
+      setError(null);
+      setSpeechError(null);
+      setRoomState("submitting");
+
+      const result = await submitAnswer(interview.id, question.id, trimmedAnswer);
+      setEvaluation(result);
+      setRoomState("evaluated");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to evaluate your answer.");
+      setRoomState("ready");
+    }
+  };
+
+  /*
+   * ---------------------------------------------------------
+   * Continue to next question directly without intermediate loading screen.
+   * ---------------------------------------------------------
+   */
+  const handleNextQuestion = async () => {
+    if (!interview || isLoadingNext) {
+      return;
+    }
+    handleStopListening();
+    try {
+      setIsLoadingNext(true);
+      setError(null);
+      setSpeechError(null);
+
+      const nextQuestion = await getNextQuestion(interview.id);
+      setQuestion(nextQuestion);
+      setAnswer("");
+      speechBaseAnswerRef.current = "";
+      setEvaluation(null);
+      setQuestionNumber((previous) => previous + 1);
+      setRoomState("ready");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      if (
+        message.toLowerCase().includes("no more") ||
+        message.toLowerCase().includes("question")
+      ) {
+        setQuestionNumber(interview.total_questions);
+      } else {
+        setError(message || "Unable to load the next question.");
+      }
+    } finally {
+      setIsLoadingNext(false);
+    }
+  };
+
+  /*
+   * ---------------------------------------------------------
+   * View Results: Release media and navigate to results page.
+   * ---------------------------------------------------------
+   */
+  const handleViewResults = async () => {
+    if (!interview || isFinishing) {
       return;
     }
     handleStopListening();
     try {
       setIsFinishing(true);
-      setRoomState("completing");
       setError(null);
-      await completeInterview(interview.id);
+
+      // Disable security listeners before cleanup to prevent false violations
       securityActiveRef.current = false;
+      intentionalCompletionRef.current = true;
+      sessionStorage.setItem("technicalInterviewViewingResults", String(interview.id));
+      invalidateTechnicalInterviewCache();
       sessionStorage.removeItem("technicalInterviewPreflightVerified");
       sessionStorage.removeItem("technicalInterviewPreflightStage");
+
+      // Release camera, screen sharing, and exit fullscreen
       await releaseInterviewMedia();
+
       try {
-        // The backend may need a moment to generate the final AI report.
-        await getInterviewResult(interview.id);
+        await completeInterview(interview.id);
       } catch {
-        // The result page handles a report that is not ready yet.
+        // Idempotent or already finalized on last question submission
       }
+
       navigate(`/interviews/${interview.id}/result`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to complete the interview.");
-      setRoomState("evaluated");
-    } finally {
+      setError(err instanceof Error ? err.message : "Unable to open results.");
       setIsFinishing(false);
-    }
-  };
-  /*
-   * ---------------------------------------------------------
-   * Load next question.
-   * ---------------------------------------------------------
-   */
-  const handleNextQuestion = async () => {
-    if (!interview) {
-      return;
-    }
-    handleStopListening();
-    try {
-      setError(null);
-      setSpeechError(null);
-      setEvaluation(null);
-      setAnswer("");
-      speechBaseAnswerRef.current = "";
-      setRoomState("loading");
-      const updatedInterview = await getInterview(interview.id);
-      setInterview(updatedInterview);
-      // The interview may have become complete after the previous answer.
-      if (updatedInterview.status !== "in_progress") {
-        await handleCompleteInterview();
-        return;
-      }
-      const nextQuestion = await getNextQuestion(interview.id);
-      setQuestion(nextQuestion);
-      setRoomState("ready");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "";
-      // If there are no remaining questions, complete the interview.
-      if (
-        message.toLowerCase().includes("no more") ||
-        message.toLowerCase().includes("question")
-      ) {
-        await handleCompleteInterview();
-        return;
-      }
-      setError(message || "Unable to load the next question.");
-      setRoomState("evaluated");
     }
   };
   /*
@@ -434,6 +452,9 @@ export default function InterviewRoom() {
   }, [enterInterviewFullscreen]);
   const terminateForSecurityViolation = useCallback(
     async (reason: string) => {
+      if (!securityActiveRef.current || intentionalCompletionRef.current) {
+        return;
+      }
       const currentInterview = interviewRef.current;
       if (!currentInterview || securityTerminationRef.current) {
         return;
@@ -476,6 +497,7 @@ export default function InterviewRoom() {
       setError(null);
       await abandonInterview(interview.id);
       securityActiveRef.current = false;
+      intentionalCompletionRef.current = true;
       sessionStorage.removeItem("technicalInterviewPreflightVerified");
       sessionStorage.removeItem("technicalInterviewPreflightStage");
       await releaseInterviewMedia();
@@ -498,7 +520,11 @@ export default function InterviewRoom() {
       // Ignore fullscreen changes until the candidate has started securely.
       // A tab switch can also exit fullscreen; handle that as a tab violation
       // only after the candidate returns to this page.
-      if (!securityActiveRef.current || document.visibilityState === "hidden") {
+      if (
+        !securityActiveRef.current ||
+        intentionalCompletionRef.current ||
+        document.visibilityState === "hidden"
+      ) {
         return;
       }
       if (document.fullscreenElement) {
@@ -519,7 +545,7 @@ export default function InterviewRoom() {
       });
     };
     const handleVisibilityChange = () => {
-      if (!securityActiveRef.current) return;
+      if (!securityActiveRef.current || intentionalCompletionRef.current) return;
 
       // Wait until the candidate returns to this website before showing the
       // termination message. The interview is terminated after confirmation.
@@ -573,29 +599,35 @@ export default function InterviewRoom() {
       return;
     }
     const onCameraEnded = () => {
+      if (!securityActiveRef.current || intentionalCompletionRef.current) return;
       void terminateForSecurityViolation(
         "The interview was terminated because the camera was turned off or disconnected.",
       );
     };
     const onCameraMuted = () => {
+      if (!securityActiveRef.current || intentionalCompletionRef.current) return;
       void terminateForSecurityViolation(
         "The interview was terminated because the camera stopped providing video.",
       );
     };
     const onDisplayEnded = () => {
+      if (!securityActiveRef.current || intentionalCompletionRef.current) return;
       void terminateForSecurityViolation(
         "The interview was terminated because entire-screen sharing stopped.",
       );
     };
     const onDisplayMuted = () => {
+      if (!securityActiveRef.current || intentionalCompletionRef.current) return;
       void terminateForSecurityViolation(
         "The interview was terminated because screen sharing stopped providing video.",
       );
     };
     const onCameraInactive = () => {
+      if (!securityActiveRef.current || intentionalCompletionRef.current) return;
       if (cameraStream.active === false) onCameraEnded();
     };
     const onDisplayInactive = () => {
+      if (!securityActiveRef.current || intentionalCompletionRef.current) return;
       if (displayStream.active === false) onDisplayEnded();
     };
     cameraTrack.addEventListener("ended", onCameraEnded);
@@ -606,6 +638,7 @@ export default function InterviewRoom() {
     displayStream.addEventListener("inactive", onDisplayInactive);
     // Also catch tracks that are disabled without firing an ended event.
     const mediaHealthCheck = window.setInterval(() => {
+      if (!securityActiveRef.current || intentionalCompletionRef.current) return;
       if (
         cameraTrack.readyState !== "live" ||
         !cameraTrack.enabled ||
@@ -642,10 +675,12 @@ export default function InterviewRoom() {
     enabled:
       interview?.status === "in_progress" &&
       !isSecurityTerminated &&
+      !intentionalCompletionRef.current &&
       roomState !== "error" &&
       roomState !== "completing",
     graceMs: 5000,
     onTerminate: () => {
+      if (!securityActiveRef.current || intentionalCompletionRef.current) return;
       void terminateForSecurityViolation(
         "The interview was ended because your face was not detected for 5 seconds.",
       );
@@ -659,7 +694,11 @@ export default function InterviewRoom() {
    */
   useEffect(() => {
     const handleKeyboard = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && roomState === "ready") {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key === "Enter" &&
+        roomState === "ready"
+      ) {
         event.preventDefault();
         void handleSubmitAnswer();
       }
@@ -673,7 +712,7 @@ export default function InterviewRoom() {
    * Loading screen.
    * ---------------------------------------------------------
    */
-  if (roomState === "loading") {
+  if (roomState === "loading" && (!interview || !question)) {
     return (
       <div className="app-background flex min-h-screen items-center justify-center px-6">
         <div className="text-center">
@@ -717,13 +756,11 @@ export default function InterviewRoom() {
   if (!interview || !question) {
     return null;
   }
-  const progress =
-    interview.total_questions > 0
-      ? Math.min((Math.max(1, interview.current_question_number) / interview.total_questions) * 100, 100)
-      : 0;
+  const totalQuestions = Math.max(1, interview.total_questions);
+  const currentQNum = Math.min(questionNumber, totalQuestions);
+  const progress = Math.min(100, Math.round((currentQNum / totalQuestions) * 100));
   const isSubmitting = roomState === "submitting";
   const isEvaluated = roomState === "evaluated";
-  const isCompleting = roomState === "completing";
   const currentDifficulty = question.difficulty;
   const canEditAnswer = roomState === "ready";
   return (
@@ -747,7 +784,7 @@ export default function InterviewRoom() {
           <button
             type="button"
             onClick={() => setShowExitConfirmation(true)}
-            disabled={isCompleting}
+            disabled={isFinishing}
             className="rounded-xl border border-white/[0.08] px-4 py-2 text-xs font-medium text-slate-400 transition hover:border-red-400/20 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Exit interview
@@ -762,10 +799,7 @@ export default function InterviewRoom() {
               Progress
             </span>
             <span className="font-mono text-[10px] text-slate-500">
-              {Math.min(
-              Math.max(1, interview.current_question_number),
-              interview.total_questions
-              )} / {interview.total_questions}
+              {currentQNum} / {totalQuestions}
             </span>
           </div>
           <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/[0.06]">
@@ -832,14 +866,14 @@ export default function InterviewRoom() {
             </div>
           </aside>
           {/* ===================================================
-              QUESTION / ANSWER
+              QUESTION / ANSWER & EVALUATION
           ==================================================== */}
           <section>
             {/* Question */}
             <div className="rounded-3xl border border-white/[0.06] bg-white/[0.025] p-6 sm:p-8">
               <div className="flex items-center justify-between">
                 <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-slate-600">
-                  Question {Math.max(1, interview.current_question_number)}
+                  Question {currentQNum}
                 </div>
                 <span className="rounded-full border border-white/[0.07] px-3 py-1 font-mono text-[9px] uppercase tracking-wider text-slate-500">
                   {difficultyLabel[currentDifficulty]}
@@ -986,50 +1020,36 @@ export default function InterviewRoom() {
                   </span>
                 </div>
               )}
-              {/* Submit answer or view results after the final question is evaluated */}
-              <button
-                type="button"
-                onClick={() =>
-                  isEvaluated &&
-                  interview.current_question_number >= interview.total_questions
-                    ? void handleCompleteInterview()
-                    : void handleSubmitAnswer()
-                }
-                disabled={
-                  isSubmitting ||
-                  isCompleting ||
-                  (isEvaluated
-                    ? interview.current_question_number < interview.total_questions
-                    : !answer.trim())
-                }
-                className="mt-5 flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-6 py-4 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5 hover:bg-slate-100 active:translate-y-0 disabled:cursor-not-allowed disabled:bg-white/40 disabled:text-slate-800"
-              >
-                {isSubmitting ? (
-                  <>
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-900/20 border-t-slate-900" />
-                    Evaluating answer...
-                  </>
-                ) : isEvaluated &&
-                  interview.current_question_number >= interview.total_questions ? (
-                  <>
-                    View Results
-                    <span aria-hidden="true">→</span>
-                  </>
-                ) : (
-                  <>
-                    Submit Answer
-                    <span aria-hidden="true">→</span>
-                  </>
-                )}
-              </button>
+              {/* Submit answer button (visible only before evaluation) */}
+              {!isEvaluated && (
+                <button
+                  type="button"
+                  onClick={() => void handleSubmitAnswer()}
+                  disabled={isSubmitting || !answer.trim()}
+                  className="mt-5 flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-6 py-4 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5 hover:bg-slate-100 active:translate-y-0 disabled:cursor-not-allowed disabled:bg-white/40 disabled:text-slate-800"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-900/20 border-t-slate-900" />
+                      Evaluating answer...
+                    </>
+                  ) : (
+                    <>
+                      Submit Answer
+                      <span aria-hidden="true">→</span>
+                    </>
+                  )}
+                </button>
+              )}
               {error && roomState === "ready" && (
                 <p className="mt-4 text-center text-xs text-red-300" role="alert">
                   {error}
                 </p>
               )}
             </div>
+
             {/* =================================================
-                EVALUATION
+                AI EVALUATION AND FEEDBACK
             ================================================== */}
             {isEvaluated && evaluation && (
               <div className="mt-6 rounded-3xl border border-white/[0.06] bg-white/[0.025] p-6 sm:p-8">
@@ -1051,6 +1071,7 @@ export default function InterviewRoom() {
                     </div>
                   </div>
                 </div>
+
                 {/* Scores */}
                 <div className="mt-6 grid gap-3 sm:grid-cols-3">
                   <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-4">
@@ -1078,6 +1099,7 @@ export default function InterviewRoom() {
                     </div>
                   </div>
                 </div>
+
                 {/* Feedback */}
                 <div className="mt-6 border-t border-white/[0.06] pt-6">
                   <div className="font-mono text-[8px] uppercase tracking-[0.16em] text-slate-600">
@@ -1085,6 +1107,7 @@ export default function InterviewRoom() {
                   </div>
                   <p className="mt-3 text-sm leading-7 text-slate-400">{evaluation.feedback}</p>
                 </div>
+
                 {/* Strengths */}
                 <div className="mt-6 border-t border-white/[0.06] pt-6">
                   <div className="font-mono text-[8px] uppercase tracking-[0.16em] text-slate-600">
@@ -1092,6 +1115,7 @@ export default function InterviewRoom() {
                   </div>
                   <p className="mt-3 text-sm leading-7 text-slate-400">{evaluation.strengths}</p>
                 </div>
+
                 {/* Improvements */}
                 <div className="mt-6 border-t border-white/[0.06] pt-6">
                   <div className="font-mono text-[8px] uppercase tracking-[0.16em] text-slate-600">
@@ -1101,33 +1125,53 @@ export default function InterviewRoom() {
                     {evaluation.improvements}
                   </p>
                 </div>
-                {/* Continue here for non-final questions; final results are opened from the answer action. */}
-                {interview.current_question_number < interview.total_questions && (
+
+                {/* Continue to next question or View Results on final question */}
+                {questionNumber < totalQuestions ? (
                   <button
                     type="button"
                     onClick={() => void handleNextQuestion()}
+                    disabled={isLoadingNext}
+                    className="mt-7 flex w-full items-center justify-center gap-3 rounded-2xl bg-violet-400 px-6 py-4 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5 hover:bg-violet-300 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isLoadingNext ? (
+                      <>
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-900/20 border-t-slate-900" />
+                        Loading next question...
+                      </>
+                    ) : (
+                      <>
+                        Continue to next question
+                        <span aria-hidden="true">→</span>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void handleViewResults()}
                     disabled={isFinishing}
                     className="mt-7 flex w-full items-center justify-center gap-3 rounded-2xl bg-violet-400 px-6 py-4 text-sm font-semibold text-slate-950 transition hover:-translate-y-0.5 hover:bg-violet-300 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Continue to next question
-                    <span aria-hidden="true">→</span>
+                    {isFinishing ? (
+                      <>
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-900/20 border-t-slate-900" />
+                        Opening Results...
+                      </>
+                    ) : (
+                      <>
+                        View Results
+                        <span aria-hidden="true">→</span>
+                      </>
+                    )}
                   </button>
                 )}
-              </div>
-            )}
-            {/* Completing */}
-            {isCompleting && (
-              <div className="mt-6 rounded-3xl border border-white/[0.06] bg-white/[0.025] p-8 text-center">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-violet-400/20 bg-violet-400/[0.06]">
-                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-violet-400/20 border-t-violet-300" />
-                </div>
-                <h3 className="mt-5 font-display text-lg font-semibold text-white">
-                  Preparing your final report
-                </h3>
-                <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-500">
-                  We're analyzing your interview performance and preparing your personalized
-                  feedback.
-                </p>
+
+                {error && (
+                  <p className="mt-4 text-center text-xs text-red-300" role="alert">
+                    {error}
+                  </p>
+                )}
               </div>
             )}
           </section>

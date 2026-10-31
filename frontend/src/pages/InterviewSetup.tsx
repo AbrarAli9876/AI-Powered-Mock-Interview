@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
-  getTopics,
   type Difficulty,
   type Topic,
 } from "../lib/api";
+import {
+  getCachedTopics,
+  fetchTopicsCached,
+} from "../lib/dataCache";
 
 type QuestionCount = 3 | 10 | 15 | 20;
 
@@ -62,10 +65,13 @@ function capitalize(value: string): string {
 export default function InterviewSetup() {
   const navigate = useNavigate();
 
-  const [topics, setTopics] = useState<Topic[]>([]);
-  const [selectedTopic, setSelectedTopic] = useState<number | null>(
-    null,
+  const [topics, setTopics] = useState<Topic[]>(
+    () => getCachedTopics() ?? [],
   );
+  const [selectedTopic, setSelectedTopic] = useState<number | null>(() => {
+    const cached = getCachedTopics();
+    return cached && cached.length > 0 ? cached[0].id : null;
+  });
 
   const [selectedDifficulty, setSelectedDifficulty] =
     useState<Difficulty>("easy");
@@ -73,7 +79,7 @@ export default function InterviewSetup() {
   const [questionCount, setQuestionCount] =
     useState<QuestionCount>(15);
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !getCachedTopics());
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,23 +88,22 @@ export default function InterviewSetup() {
 
     async function loadTopics() {
       try {
-        setIsLoading(true);
-        setError(null);
-
-        const data = await getTopics();
+        const data = await fetchTopicsCached();
 
         if (!isMounted) return;
 
         setTopics(data);
-        setSelectedTopic(data.length > 0 ? data[0].id : null);
+        setSelectedTopic((current) => current ?? (data.length > 0 ? data[0].id : null));
+        setError(null);
       } catch (err) {
         if (!isMounted) return;
-
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to load interview topics.",
-        );
+        if (!getCachedTopics()) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load interview topics.",
+          );
+        }
       } finally {
         if (isMounted) {
           setIsLoading(false);

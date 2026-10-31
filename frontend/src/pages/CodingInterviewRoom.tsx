@@ -25,6 +25,7 @@ export default function CodingInterviewRoom() {
   const terminateRef = useRef<(reason: string) => void>(
     () => undefined
   );
+  const intentionalCompletionRef = useRef(false);
 
   const [fullscreenWarning, setFullscreenWarning] =
     useState<string | null>(null);
@@ -77,8 +78,20 @@ export default function CodingInterviewRoom() {
     let lastDetectionAt = 0;
     let detectionBusy = false;
 
+    const isIntentionalResultsNavigation = () => {
+      if (intentionalCompletionRef.current) return true;
+      const marker = sessionStorage.getItem("codingInterviewViewingResults");
+      return (
+        marker !== null &&
+        marker !== undefined &&
+        (marker === String(sessionId) ||
+          marker === "true" ||
+          (sessionId !== null && marker === String(Number(sessionId))))
+      );
+    };
+
     const terminate = async (reason: string) => {
-      if (terminatedRef.current || disposed) return;
+      if (terminatedRef.current || disposed || isIntentionalResultsNavigation()) return;
 
       terminatedRef.current = true;
       setFaceCountdown(null);
@@ -119,6 +132,8 @@ export default function CodingInterviewRoom() {
     };
 
     const onVisibilityChange = () => {
+      if (terminatedRef.current || disposed || isIntentionalResultsNavigation()) return;
+
       if (document.visibilityState === "hidden") {
         pendingTabChangeRef.current = true;
         return;
@@ -141,7 +156,8 @@ export default function CodingInterviewRoom() {
       if (
         terminatedRef.current ||
         disposed ||
-        document.fullscreenElement
+        document.fullscreenElement ||
+        isIntentionalResultsNavigation()
       ) {
         return;
       }
@@ -167,10 +183,6 @@ export default function CodingInterviewRoom() {
         );
       }
     };
-
-    const isIntentionalResultsNavigation = () =>
-      sessionStorage.getItem("codingInterviewViewingResults") ===
-      String(sessionId);
 
     const onDisplayEnded = () => {
       if (isIntentionalResultsNavigation()) return;
@@ -220,6 +232,21 @@ export default function CodingInterviewRoom() {
       onFullscreenChange
     );
 
+    const onIntentionalResults = () => {
+      intentionalCompletionRef.current = true;
+      setFaceCountdown(null);
+      setFullscreenWarning(null);
+      setTerminationMessage(null);
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+
+    window.addEventListener(
+      "codingInterviewViewingResults",
+      onIntentionalResults
+    );
+
     const video = videoRef.current;
 
     if (video && camera) {
@@ -232,7 +259,7 @@ export default function CodingInterviewRoom() {
     const runDetection = async (
       now: number
     ): Promise<void> => {
-      if (disposed || terminatedRef.current) return;
+      if (disposed || terminatedRef.current || isIntentionalResultsNavigation()) return;
 
       const target = videoRef.current;
 
@@ -275,9 +302,11 @@ export default function CodingInterviewRoom() {
             if (remainingMs <= 0) {
               setFaceCountdown(null);
 
-              void terminate(
-                "The interview ended because no face was detected for 5 consecutive seconds."
-              );
+              if (!isIntentionalResultsNavigation()) {
+                void terminate(
+                  "The interview ended because no face was detected for 5 consecutive seconds."
+                );
+              }
             }
           }
         } catch {
@@ -287,7 +316,7 @@ export default function CodingInterviewRoom() {
         }
       }
 
-      if (!disposed && !terminatedRef.current) {
+      if (!disposed && !terminatedRef.current && !isIntentionalResultsNavigation()) {
         rafId = window.requestAnimationFrame((time) => {
           void runDetection(time);
         });
@@ -352,10 +381,10 @@ export default function CodingInterviewRoom() {
         onFullscreenChange
       );
 
-      // Clear the intentional-results marker after leaving the interview room.
-      if (isIntentionalResultsNavigation()) {
-        sessionStorage.removeItem("codingInterviewViewingResults");
-      }
+      window.removeEventListener(
+        "codingInterviewViewingResults",
+        onIntentionalResults
+      );
 
       // Do not stop camera/display streams in effect cleanup. React StrictMode
       // intentionally runs an extra setup/cleanup cycle in development; stopping

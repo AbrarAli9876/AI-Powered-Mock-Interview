@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  getCodingInterviews,
   getCodingInterviewResult,
   type CodingInterview,
 } from "../lib/api";
+import {
+  getCachedCodingInterviews,
+  fetchCodingInterviewsCached,
+} from "../lib/dataCache";
 
 function formatDateTime(value: string): string {
   const date = new Date(value);
@@ -61,8 +64,12 @@ function safeNumber(value: unknown): number {
 export default function CodingInterviewHistory() {
   const navigate = useNavigate();
 
-  const [interviews, setInterviews] = useState<CodingInterview[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Read cached data synchronously to avoid loading screens
+  const [interviews, setInterviews] = useState<CodingInterview[]>(() => {
+    const cached = getCachedCodingInterviews();
+    return cached ? cached.filter((i) => i.status === "completed") : [];
+  });
+  const [loading, setLoading] = useState(() => !getCachedCodingInterviews());
   const [error, setError] = useState<string | null>(null);
   const [openingResultId, setOpeningResultId] = useState<number | string | null>(null);
   const [resultError, setResultError] = useState<string | null>(null);
@@ -72,14 +79,16 @@ export default function CodingInterviewHistory() {
 
     async function loadInterviews() {
       try {
-        setLoading(true);
-        setError(null);
-
-        const items = await getCodingInterviews();
+        const items = await fetchCodingInterviewsCached();
 
         if (cancelled) return;
 
-        const sorted = [...items].sort(
+        // Exclude in-progress coding sessions from history
+        const completed = items.filter(
+          (interview) => interview.status === "completed",
+        );
+
+        const sorted = [...completed].sort(
           (a, b) =>
             new Date(b.created_at).getTime() -
             new Date(a.created_at).getTime(),
@@ -88,11 +97,13 @@ export default function CodingInterviewHistory() {
         setInterviews(sorted);
       } catch (err: unknown) {
         if (!cancelled) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Unable to load coding interview history.",
-          );
+          if (!getCachedCodingInterviews()) {
+            setError(
+              err instanceof Error
+                ? err.message
+                : "Unable to load coding interview history.",
+            );
+          }
         }
       } finally {
         if (!cancelled) {

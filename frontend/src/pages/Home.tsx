@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getInterviews, getTopics, type Interview, type Topic } from "../lib/api";
+import { type Interview, type Topic } from "../lib/api";
+import {
+  getCachedInterviews,
+  getCachedTopics,
+  fetchInterviewsCached,
+  fetchTopicsCached,
+  clearAppCache,
+} from "../lib/dataCache";
 
 interface CurrentUser {
   id: number;
@@ -72,9 +79,15 @@ export default function Home() {
 
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [interviews, setInterviews] = useState<Interview[]>([]);
-  const [topics, setTopics] = useState<Topic[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(true);
+  const [interviews, setInterviews] = useState<Interview[]>(
+    () => getCachedInterviews() ?? [],
+  );
+  const [topics, setTopics] = useState<Topic[]>(
+    () => getCachedTopics() ?? [],
+  );
+  const [historyLoading, setHistoryLoading] = useState(
+    () => !getCachedInterviews(),
+  );
   const [historyError, setHistoryError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -114,8 +127,8 @@ export default function Home() {
     async function loadTechnicalInterviewHistory() {
       try {
         const [interviewData, topicData] = await Promise.all([
-          getInterviews(),
-          getTopics(),
+          fetchInterviewsCached(),
+          fetchTopicsCached(),
         ]);
         if (!active) return;
 
@@ -129,11 +142,13 @@ export default function Home() {
         setHistoryError(null);
       } catch (error) {
         if (!active) return;
-        setHistoryError(
-          error instanceof Error
-            ? error.message
-            : "Could not load technical interview history.",
-        );
+        if (!getCachedInterviews()) {
+          setHistoryError(
+            error instanceof Error
+              ? error.message
+              : "Could not load technical interview history.",
+          );
+        }
       } finally {
         if (active) setHistoryLoading(false);
       }
@@ -166,9 +181,7 @@ export default function Home() {
       ? scoredInterviews.reduce((total, score) => total + score, 0) /
         scoredInterviews.length
       : null;
-  const inProgressCount = interviews.filter(
-    (interview) => interview.status === "in_progress",
-  ).length;
+
 
   const formatInterviewDate = (value: string) => {
     const date = new Date(value);
@@ -192,6 +205,7 @@ export default function Home() {
   };
 
   const handleLogout = () => {
+    clearAppCache();
     localStorage.removeItem("access_token");
     localStorage.removeItem("user");
 
@@ -828,62 +842,120 @@ export default function Home() {
 
           <div
             className="
-              glass-panel
+              group
+              relative
+              flex
+              flex-col
+              justify-between
+              overflow-hidden
               rounded-3xl
+              border
+              border-white/[0.08]
+              bg-gradient-to-br
+              from-white/[0.04]
+              via-white/[0.02]
+              to-violet-500/[0.06]
               p-7
+              sm:p-8
+              shadow-glow
+              transition-all
+              duration-500
+              hover:border-violet-400/20
             "
           >
-
+            {/* Ambient glow */}
             <div
               className="
-                font-mono
-                text-[10px]
-                uppercase
-                tracking-[0.18em]
-                text-slate-600
+                pointer-events-none
+                absolute
+                bottom-[-80px]
+                right-[-80px]
+                h-64
+                w-64
+                rounded-full
+                bg-violet-500/[0.07]
+                blur-3xl
+                transition-transform
+                duration-700
+                group-hover:scale-125
               "
-            >
-              Your performance
+            />
+
+            <div className="relative">
+              {/* Card Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-violet-400 shadow-[0_0_8px_rgba(167,139,250,0.8)]" />
+                  <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-violet-300/90">
+                    Your performance
+                  </span>
+                </div>
+                <span className="rounded-full border border-white/[0.08] bg-black/20 px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider text-slate-400">
+                  Technical
+                </span>
+              </div>
+
+              {/* Hero Score Metric */}
+              <div className="mt-8">
+                <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                  Average interview score
+                </div>
+                <div className="mt-3 flex items-baseline gap-3">
+                  <span className="font-display text-5xl font-semibold tracking-tight text-white sm:text-6xl">
+                    {averageScore === null ? "—" : `${averageScore.toFixed(0)}%`}
+                  </span>
+                  {averageScore !== null && (
+                    <span className="text-xs font-medium text-emerald-400">
+                      {averageScore >= 80 ? "Above average" : averageScore >= 60 ? "On track" : "Needs practice"}
+                    </span>
+                  )}
+                </div>
+
+                {/* Score progress track */}
+                <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-violet-500 via-indigo-400 to-emerald-400 transition-all duration-700 ease-out"
+                    style={{ width: `${Math.min(100, Math.max(0, averageScore ?? 0))}%` }}
+                  />
+                </div>
+              </div>
             </div>
 
-
-            <div className="mt-7">
-
+            {/* Completed Subcard */}
+            <div className="relative mt-8">
               <div
                 className="
-                  font-display
-                  text-5xl
-                  font-semibold
-                  tracking-tight
-                  text-white
+                  rounded-2xl
+                  border
+                  border-white/[0.06]
+                  bg-black/20
+                  p-5
+                  backdrop-blur-sm
+                  transition-all
+                  duration-300
+                  hover:border-white/[0.12]
+                  hover:bg-black/30
                 "
               >
-                {averageScore === null ? "—" : `${averageScore.toFixed(0)}%`}
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                    Completed
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-400">
+                    {completedInterviews.length} {completedInterviews.length === 1 ? "session" : "sessions"}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex items-baseline justify-between">
+                  <span className="font-display text-3xl font-semibold tracking-tight text-white">
+                    {completedInterviews.length}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    Finished technical sessions
+                  </span>
+                </div>
               </div>
-
-              <div className="mt-2 text-sm text-slate-500">
-                Average interview score
-              </div>
-
             </div>
-
-
-            <div className="mt-8 grid grid-cols-2 gap-3">
-
-              <StatCard
-                label="Completed"
-                value={String(completedInterviews.length)}
-                description="Finished technical sessions"
-              />
-
-              <StatCard
-                label="In progress"
-                value={String(inProgressCount)}
-                description="Active technical sessions"
-              />
-
-            </div>
-
           </div>
 
         </section>
@@ -1061,7 +1133,7 @@ export default function Home() {
                 </p>
               </div>
               <div className="font-mono text-[10px] uppercase tracking-[0.15em] text-slate-500">
-                {Math.min(interviews.length, 3)} {Math.min(interviews.length, 3) === 1 ? "session" : "sessions"}
+                {Math.min(completedInterviews.length, 3)} {Math.min(completedInterviews.length, 3) === 1 ? "session" : "sessions"}
               </div>
             </div>
 
@@ -1080,18 +1152,17 @@ export default function Home() {
                     Retry
                   </button>
                 </div>
-              ) : interviews.length === 0 ? (
+              ) : completedInterviews.length === 0 ? (
                 <div className="flex min-h-56 items-center justify-center rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.012]">
                   <div className="max-w-sm text-center">
                     <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.07] bg-white/[0.025]">
                       <span className="font-mono text-xs tracking-widest text-slate-500">01</span>
                     </div>
                     <h3 className="mt-5 font-display text-base font-semibold text-slate-300">
-                      No technical interviews were returned.
+                      No completed technical interviews yet.
                     </h3>
                     <p className="mt-2 text-xs leading-5 text-slate-500">
-                      If you have completed technical interviews before, make sure the backend
-                      GET /interviews endpoint returns sessions for your logged-in account.
+                      Complete your first mock interview to view your report, evaluation, and score history.
                     </p>
                     <button
                       onClick={() => navigate("/interviews/new")}
@@ -1103,9 +1174,8 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {interviews.slice(0, 3).map((interview) => {
+                  {completedInterviews.slice(0, 3).map((interview) => {
                     const scoreValue =
-                      interview.status === "completed" &&
                       interview.overall_score !== null &&
                       interview.overall_score !== undefined
                         ? Number(interview.overall_score)
@@ -1114,18 +1184,6 @@ export default function Home() {
                       scoreValue !== null && Number.isFinite(scoreValue)
                         ? scoreValue
                         : null;
-                    const statusLabel =
-                      interview.status === "completed"
-                        ? "Completed"
-                        : interview.status === "in_progress"
-                          ? "In progress"
-                          : "Abandoned";
-                    const statusClass =
-                      interview.status === "completed"
-                        ? "border-emerald-400/15 bg-emerald-400/[0.05] text-emerald-300"
-                        : interview.status === "in_progress"
-                          ? "border-amber-400/15 bg-amber-400/[0.05] text-amber-300"
-                          : "border-white/10 bg-white/[0.03] text-slate-400";
 
                     return (
                       <article
@@ -1137,8 +1195,8 @@ export default function Home() {
                             <h3 className="font-semibold text-slate-100">
                               {topicNames.get(interview.topic_id) ?? `Technical interview #${interview.id}`}
                             </h3>
-                            <span className={`rounded-full border px-2.5 py-1 text-[10px] ${statusClass}`}>
-                              {statusLabel}
+                            <span className="rounded-full border border-emerald-400/15 bg-emerald-400/[0.05] px-2.5 py-1 text-[10px] text-emerald-300">
+                              Completed
                             </span>
                           </div>
                           <p className="mt-2 text-xs text-slate-500">
@@ -1156,32 +1214,22 @@ export default function Home() {
                               {validScore === null ? "—" : `${validScore.toFixed(0)}%`}
                             </div>
                           </div>
-                          {interview.status === "completed" && (
-                            <button
-                              onClick={() => handleTechnicalInterviewClick(interview)}
-                              className="rounded-lg border border-violet-400/20 bg-violet-500/[0.06] px-4 py-2.5 text-xs font-medium text-violet-200 transition hover:bg-violet-500/[0.12]"
-                            >
-                              View report →
-                            </button>
-                          )}
-                          {interview.status === "in_progress" && (
-                            <button
-                              onClick={() => handleTechnicalInterviewClick(interview)}
-                              className="rounded-lg border border-violet-400/20 bg-violet-500/[0.06] px-4 py-2.5 text-xs font-medium text-violet-200 transition hover:bg-violet-500/[0.12]"
-                            >
-                              Continue →
-                            </button>
-                          )}
+                          <button
+                            onClick={() => handleTechnicalInterviewClick(interview)}
+                            className="rounded-lg border border-violet-400/20 bg-violet-500/[0.06] px-4 py-2.5 text-xs font-medium text-violet-200 transition hover:bg-violet-500/[0.12]"
+                          >
+                            View report →
+                          </button>
                         </div>
                       </article>
                     );
                   })}
-                  {interviews.length > 5 && (
+                  {completedInterviews.length > 3 && (
                     <button
                       onClick={() => navigate("/dashboard")}
                       className="mt-2 text-xs text-violet-300 transition hover:text-violet-200"
                     >
-                      View all {interviews.length} technical interviews →
+                      View all {completedInterviews.length} completed interviews →
                     </button>
                   )}
                 </div>

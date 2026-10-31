@@ -9,6 +9,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 
+import { invalidateCodingInterviewCache } from "../lib/dataCache";
 import {
   abandonCodingInterview,
   getCodingInterview,
@@ -49,6 +50,7 @@ const LANGUAGE_LABELS: Record<
   javascript: "JavaScript",
   java: "Java",
   cpp: "C++",
+  sql: "SQL",
 };
 
 const DIFFICULTY_LABELS: Record<
@@ -127,7 +129,10 @@ export default function CodingInterview() {
       | null;
 
   const initialSessionId =
-    interviewState?.sessionId;
+    interviewState?.sessionId ??
+    (sessionStorage.getItem("codingInterviewSessionId")
+      ? Number(sessionStorage.getItem("codingInterviewSessionId"))
+      : undefined);
 
   const [
     sessionId,
@@ -236,7 +241,7 @@ export default function CodingInterview() {
   );
 
   useEffect(() => {
-    if (!interviewState) {
+    if (!interviewState && !sessionStorage.getItem("codingInterviewSessionId")) {
       navigate(
         "/coding-interview/setup",
         {
@@ -590,6 +595,48 @@ export default function CodingInterview() {
       } catch {
         // The browser may already have exited fullscreen.
       }
+    }
+  }
+
+  async function handleViewResults() {
+    if (!sessionId) {
+      setError("Interview session not found.");
+      return;
+    }
+
+    try {
+      setIsLoadingResult(true);
+
+      // Tell the room's security listeners that this is an intentional completion,
+      // not a camera/screen violation or suspicious exit.
+      invalidateCodingInterviewCache();
+      sessionStorage.setItem(
+        "codingInterviewViewingResults",
+        String(sessionId),
+      );
+      window.dispatchEvent(
+        new CustomEvent("codingInterviewViewingResults"),
+      );
+
+      // Stop camera and screen-sharing streams, and exit fullscreen mode.
+      await releaseInterviewMedia();
+
+      // Navigate directly to the corresponding Coding Interview Results page.
+      navigate(
+        `/coding-interview/results/${encodeURIComponent(String(sessionId))}`,
+        {
+          state: {
+            sessionId: Number(sessionId),
+          },
+        },
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to open interview results.",
+      );
+      setIsLoadingResult(false);
     }
   }
 
@@ -1482,58 +1529,11 @@ export default function CodingInterview() {
 
                 )}
 
-                {isInterviewComplete && (
+                {(isInterviewComplete || submitResult?.isLastQuestion) && (
 
                   <button
                     type="button"
-                    onClick={async () => {
-                      if (!sessionId) {
-                        return;
-                      }
-
-                      try {
-                        setIsLoadingResult(
-                          true,
-                        );
-
-                        // Load the result before releasing the interview media.
-                        // This prevents a failed request from leaving the
-                        // candidate on the interview page without active media.
-                        const result =
-                          await getCodingInterviewResult(
-                            sessionId,
-                          );
-
-                        // Tell the room's security listeners that this is an
-                        // intentional completion, not a camera/screen violation.
-                        sessionStorage.setItem(
-                          "codingInterviewViewingResults",
-                          String(sessionId),
-                        );
-
-                        await releaseInterviewMedia();
-
-                        navigate(
-                          `/coding-interview/results/${encodeURIComponent(String(sessionId))}`,
-                          {
-                            state: {
-                              result,
-                              sessionId,
-                            },
-                          },
-                        );
-                      } catch (err) {
-                        setError(
-                          err instanceof Error
-                            ? err.message
-                            : "Unable to load the final result.",
-                        );
-                      } finally {
-                        setIsLoadingResult(
-                          false,
-                        );
-                      }
-                    }}
+                    onClick={handleViewResults}
                     disabled={
                       isLoadingResult
                     }

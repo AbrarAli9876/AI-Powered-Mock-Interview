@@ -2,60 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
-  getInterviews,
-  getTopics,
   type Difficulty,
   type Interview,
   type Topic,
 } from "../lib/api";
-
-const DASHBOARD_CACHE_KEY = "technicalInterviewDashboardCache";
-
-type DashboardCache = {
-  interviews: Interview[];
-  topics: Topic[];
-  cachedAt: number;
-};
-
-function readDashboardCache(): DashboardCache | null {
-  try {
-    const raw = sessionStorage.getItem(DASHBOARD_CACHE_KEY);
-    if (!raw) return null;
-
-    const cache: DashboardCache = JSON.parse(raw);
-
-    if (
-      !Array.isArray(cache.interviews) ||
-      !Array.isArray(cache.topics)
-    ) {
-      return null;
-    }
-
-    return cache;
-  } catch {
-    return null;
-  }
-}
-
-function writeDashboardCache(
-  interviews: Interview[],
-  topics: Topic[],
-): void {
-  try {
-    const cache: DashboardCache = {
-      interviews,
-      topics,
-      cachedAt: Date.now(),
-    };
-
-    sessionStorage.setItem(
-      DASHBOARD_CACHE_KEY,
-      JSON.stringify(cache),
-    );
-  } catch {
-    // The dashboard must continue working if storage is unavailable.
-  }
-}
+import {
+  getCachedInterviews,
+  getCachedTopics,
+  fetchInterviewsCached,
+  fetchTopicsCached,
+} from "../lib/dataCache";
 
 /**
  * Call this after an interview is completed or its result is updated.
@@ -173,20 +129,16 @@ function toNumericScore(value: unknown): number | null {
 export default function Dashboard() {
   const navigate = useNavigate();
 
-  // Read cached data synchronously, before the first render.
-  const [initialCache] = useState<DashboardCache | null>(
-    () => readDashboardCache(),
-  );
-
+  // Read cached data synchronously, before the first render to avoid loading screens.
   const [interviews, setInterviews] = useState<Interview[]>(
-    () => initialCache?.interviews ?? [],
+    () => getCachedInterviews() ?? [],
   );
 
   const [topics, setTopics] = useState<Topic[]>(
-    () => initialCache?.topics ?? [],
+    () => getCachedTopics() ?? [],
   );
 
-  const [loading, setLoading] = useState(!initialCache);
+  const [loading, setLoading] = useState(() => !getCachedInterviews());
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -202,23 +154,19 @@ export default function Dashboard() {
 
       try {
         const [interviewData, topicData] = await Promise.all([
-          getInterviews(),
-          getTopics(),
+          fetchInterviewsCached({ force: showLoading }),
+          fetchTopicsCached({ force: showLoading }),
         ]);
 
         const sortedInterviews = sortInterviews(interviewData);
-
         setInterviews(sortedInterviews);
         setTopics(topicData);
-
-        writeDashboardCache(sortedInterviews, topicData);
       } catch (err) {
         const message =
           err instanceof Error
             ? err.message
             : "Failed to load dashboard.";
 
-        // Keep cached content visible if a background refresh fails.
         if (showLoading) {
           setError(message);
         } else {
@@ -238,31 +186,25 @@ export default function Dashboard() {
     async function refresh() {
       try {
         const [interviewData, topicData] = await Promise.all([
-          getInterviews(),
-          getTopics(),
+          fetchInterviewsCached(),
+          fetchTopicsCached(),
         ]);
 
         if (!isMounted) return;
 
         const sortedInterviews = sortInterviews(interviewData);
-
         setInterviews(sortedInterviews);
         setTopics(topicData);
         setError(null);
-
-        writeDashboardCache(sortedInterviews, topicData);
       } catch (err) {
         if (!isMounted) return;
 
-        if (!initialCache) {
+        if (!getCachedInterviews()) {
           setError(
             err instanceof Error
               ? err.message
               : "Failed to load dashboard.",
           );
-        } else {
-          // Existing cached data remains visible.
-          console.error("Dashboard background refresh failed:", err);
         }
       } finally {
         if (isMounted) {
@@ -277,7 +219,7 @@ export default function Dashboard() {
     return () => {
       isMounted = false;
     };
-  }, [initialCache]);
+  }, []);
 
   const topicMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -424,19 +366,11 @@ export default function Dashboard() {
         <section className="dashboard-overview">
           <div className="dashboard-stat-card">
             <span className="dashboard-stat-label">
-              TOTAL INTERVIEWS
+              COMPLETED SESSIONS
             </span>
-            <strong>{interviews.length}</strong>
-            <span className="dashboard-stat-description">
-              All interview sessions
-            </span>
-          </div>
-
-          <div className="dashboard-stat-card">
-            <span className="dashboard-stat-label">COMPLETED</span>
             <strong>{completedInterviews.length}</strong>
             <span className="dashboard-stat-description">
-              Successfully completed
+              Finished technical interviews
             </span>
           </div>
 
@@ -446,7 +380,7 @@ export default function Dashboard() {
             </span>
             <strong>
               {averageScore !== null
-                ? averageScore.toFixed(0)
+                ? `${averageScore.toFixed(0)}%`
                 : "—"}
             </strong>
             <span className="dashboard-stat-description">
@@ -457,10 +391,20 @@ export default function Dashboard() {
           <div className="dashboard-stat-card">
             <span className="dashboard-stat-label">BEST SCORE</span>
             <strong>
-              {bestScore !== null ? bestScore.toFixed(0) : "—"}
+              {bestScore !== null ? `${bestScore.toFixed(0)}%` : "—"}
             </strong>
             <span className="dashboard-stat-description">
               Your highest performance
+            </span>
+          </div>
+
+          <div className="dashboard-stat-card">
+            <span className="dashboard-stat-label">LATEST SCORE</span>
+            <strong>
+              {latestScore !== null ? `${latestScore.toFixed(0)}%` : "—"}
+            </strong>
+            <span className="dashboard-stat-description">
+              Most recent completed session
             </span>
           </div>
         </section>
@@ -530,7 +474,7 @@ export default function Dashboard() {
           </section>
         )}
 
-        {/* INTERVIEW HISTORY */}
+        {/* INTERVIEW HISTORY (Completed Only) */}
         <section className="dashboard-section">
           <div className="dashboard-section-header">
             <div>
@@ -538,28 +482,28 @@ export default function Dashboard() {
                 INTERVIEW HISTORY
               </div>
 
-              <h2>Your interviews</h2>
+              <h2>Completed interviews</h2>
 
               <p>
-                Review every interview in chronological order.
+                Review your finished interviews and evaluation reports.
               </p>
             </div>
 
             <span className="dashboard-count">
-              {interviews.length}{" "}
-              {interviews.length === 1 ? "interview" : "interviews"}
+              {completedInterviews.length}{" "}
+              {completedInterviews.length === 1 ? "completed interview" : "completed interviews"}
             </span>
           </div>
 
-          {interviews.length === 0 ? (
+          {completedInterviews.length === 0 ? (
             <div className="dashboard-empty">
               <div className="dashboard-empty-icon">+</div>
 
-              <h3>No interviews yet</h3>
+              <h3>No completed interviews yet</h3>
 
               <p>
-                Start your first mock interview to begin building
-                your performance history.
+                Complete your first mock interview to begin building
+                your performance history and report dashboard.
               </p>
 
               <button
@@ -572,7 +516,7 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="dashboard-interview-list">
-              {interviews.map((interview, index) => {
+              {completedInterviews.map((interview, index) => {
                 const topicName =
                   topicMap.get(interview.topic_id) ??
                   `Topic #${interview.topic_id}`;
@@ -585,7 +529,7 @@ export default function Dashboard() {
                     key={interview.id}
                   >
                     <div className="dashboard-interview-number">
-                      #{interviews.length - index}
+                      #{completedInterviews.length - index}
                     </div>
 
                     <div className="dashboard-interview-main">
@@ -598,10 +542,8 @@ export default function Dashboard() {
                           </p>
                         </div>
 
-                        <span
-                          className={getStatusClass(interview.status)}
-                        >
-                          {getStatusLabel(interview.status)}
+                        <span className="dashboard-status dashboard-status-success">
+                          Completed
                         </span>
                       </div>
 
@@ -630,7 +572,7 @@ export default function Dashboard() {
                         </div>
 
                         <div>
-                          <span>PROGRESS</span>
+                          <span>COMPLETED</span>
                           <strong>
                             {interview.current_question_number}/
                             {interview.total_questions}
@@ -643,32 +585,18 @@ export default function Dashboard() {
                       <span>SCORE</span>
 
                       <strong className={getScoreClass(score)}>
-                        {score !== null ? score.toFixed(0) : "—"}
+                        {score !== null ? `${score.toFixed(0)}%` : "—"}
                       </strong>
 
-                      {interview.status === "completed" && (
-                        <button
-                          className="dashboard-view-button"
-                          onClick={() =>
-                            handleInterviewClick(interview)
-                          }
-                        >
-                          View Full Report
-                          <span>→</span>
-                        </button>
-                      )}
-
-                      {interview.status === "in_progress" && (
-                        <button
-                          className="dashboard-view-button"
-                          onClick={() =>
-                            handleInterviewClick(interview)
-                          }
-                        >
-                          Continue Interview
-                          <span>→</span>
-                        </button>
-                      )}
+                      <button
+                        className="dashboard-view-button"
+                        onClick={() =>
+                          handleInterviewClick(interview)
+                        }
+                      >
+                        View Full Report
+                        <span>→</span>
+                      </button>
                     </div>
                   </article>
                 );

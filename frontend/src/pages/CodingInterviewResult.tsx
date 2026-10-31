@@ -5,6 +5,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
+import { invalidateCodingInterviewCache } from "../lib/dataCache";
 import {
   getCodingInterviewResult,
   type CodingInterviewResult,
@@ -21,6 +22,7 @@ const LANGUAGE_NAMES: Record<string, string> = {
   javascript: "JavaScript",
   java: "Java",
   cpp: "C++",
+  sql: "SQL",
 };
 
 function displayLanguage(language?: string) {
@@ -193,12 +195,16 @@ export default function CodingInterviewResult() {
   const parsedRouteSessionId = Number(routeSessionId);
   const querySessionId = Number(searchParams.get("sessionId"));
 
+  const stateSessionId =
+    locationState.sessionId !== undefined && locationState.sessionId !== null
+      ? Number(locationState.sessionId)
+      : undefined;
+
   // Supports navigation from history, direct URL navigation,
   // older query-string links, and navigation state.
   const sessionId =
-    locationState.sessionId ??
-    (Number.isFinite(parsedRouteSessionId) &&
-    parsedRouteSessionId > 0
+    (Number.isFinite(stateSessionId) && (stateSessionId as number) > 0 ? (stateSessionId as number) : undefined) ??
+    (Number.isFinite(parsedRouteSessionId) && parsedRouteSessionId > 0
       ? parsedRouteSessionId
       : Number.isFinite(querySessionId) && querySessionId > 0
         ? querySessionId
@@ -217,6 +223,9 @@ export default function CodingInterviewResult() {
   const [expandedQuestions, setExpandedQuestions] = useState<number[]>([]);
 
   useEffect(() => {
+    sessionStorage.removeItem("codingInterviewViewingResults");
+    invalidateCodingInterviewCache();
+
     if (locationState.result) {
       setResult(locationState.result);
       setError(null);

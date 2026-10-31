@@ -2,9 +2,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
-  getInterviews,
   type Interview,
 } from "../lib/api";
+import {
+  fetchInterviewsCached,
+  getCachedInterviews,
+  clearAppCache,
+} from "../lib/dataCache";
 
 
 interface CurrentUser {
@@ -23,7 +27,7 @@ export default function Profile() {
     useState<CurrentUser | null>(null);
 
   const [interviews, setInterviews] =
-    useState<Interview[]>([]);
+    useState<Interview[]>(() => getCachedInterviews() ?? []);
 
   const [isLoading, setIsLoading] =
     useState(true);
@@ -55,7 +59,7 @@ export default function Profile() {
 
 
         const interviewData =
-          await getInterviews();
+          await fetchInterviewsCached();
 
         setInterviews(interviewData);
 
@@ -82,6 +86,7 @@ export default function Profile() {
 
 
   const handleLogout = () => {
+    clearAppCache();
     localStorage.removeItem(
       "access_token",
     );
