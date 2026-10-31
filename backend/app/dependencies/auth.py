@@ -21,24 +21,25 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    """
-    Retrieve the currently authenticated user from the JWT token.
-    """
-
     try:
         payload = decode_access_token(token)
+        print("[AUTH DEBUG] JWT decoded successfully")
 
         user_id = payload.get("sub")
+        print(f"[AUTH DEBUG] JWT subject: {user_id}")
 
         if not user_id:
+            print("[AUTH DEBUG] Missing subject")
             raise UserNotFoundException()
 
         try:
             user_id = int(user_id)
         except (TypeError, ValueError):
+            print("[AUTH DEBUG] Invalid user ID format")
             raise UserNotFoundException()
 
-    except JWTError:
+    except JWTError as exc:
+        print(f"[AUTH DEBUG] JWT validation failed: {type(exc).__name__}")
         raise UserNotFoundException()
 
     user = (
@@ -48,7 +49,10 @@ def get_current_user(
     )
 
     if not user:
+        print(f"[AUTH DEBUG] User ID {user_id} not found in database")
         raise UserNotFoundException()
+
+    print(f"[AUTH DEBUG] User found: ID={user.id}")
 
     if not user.is_active:
         raise InactiveUserException()
