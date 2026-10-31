@@ -17,17 +17,21 @@ oauth2_scheme = OAuth2PasswordBearer(
 )
 
 
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
+    # Print fingerprint BEFORE attempting JWT validation.
+    print(
+        "[TOKEN DEBUG] Received fingerprint:",
+        hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+    )
+
     try:
         payload = decode_access_token(token)
+
         print("[AUTH DEBUG] JWT decoded successfully")
-        print(
-    "[TOKEN DEBUG] Received fingerprint:",
-    hashlib.sha256(token.encode()).hexdigest()[:12]
-)
 
         user_id = payload.get("sub")
         print(f"[AUTH DEBUG] JWT subject: {user_id}")
@@ -43,7 +47,10 @@ def get_current_user(
             raise UserNotFoundException()
 
     except JWTError as exc:
-        print(f"[AUTH DEBUG] JWT validation failed: {type(exc).__name__}")
+        print(
+            f"[AUTH DEBUG] JWT validation failed: "
+            f"{type(exc).__name__}"
+        )
         raise UserNotFoundException()
 
     user = (
@@ -62,6 +69,7 @@ def get_current_user(
         raise InactiveUserException()
 
     return user
+
 
 
 def get_current_admin(
