@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   getCodingInterviews,
+  getCodingInterviewResult,
   type CodingInterview,
 } from "../lib/api";
 
@@ -63,6 +64,8 @@ export default function CodingInterviewHistory() {
   const [interviews, setInterviews] = useState<CodingInterview[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [openingResultId, setOpeningResultId] = useState<number | string | null>(null);
+  const [resultError, setResultError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,8 +108,31 @@ export default function CodingInterviewHistory() {
     };
   }, []);
 
-  function openResults(interviewId: number | string) {
-    navigate(`/coding-interview/results/${encodeURIComponent(String(interviewId))}`);
+  async function openResults(interviewId: number | string) {
+    try {
+      setOpeningResultId(interviewId);
+      setResultError(null);
+
+      const result = await getCodingInterviewResult(Number(interviewId));
+
+      navigate(
+        `/coding-interview/results/${encodeURIComponent(String(interviewId))}`,
+        {
+          state: {
+            result,
+            sessionId: Number(interviewId),
+          },
+        },
+      );
+    } catch (err: unknown) {
+      setResultError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load this coding interview result.",
+      );
+    } finally {
+      setOpeningResultId(null);
+    }
   }
 
   return (
@@ -209,6 +235,12 @@ export default function CodingInterviewHistory() {
             </div>
           )}
 
+          {!loading && !error && resultError && (
+            <div className="dashboard-error" role="alert">
+              <p>{resultError}</p>
+            </div>
+          )}
+
           {!loading && !error && interviews.length > 0 && (
             <div className="dashboard-interview-list">
               {interviews.map((interview, index) => {
@@ -284,10 +316,13 @@ export default function CodingInterviewHistory() {
                         <button
                           type="button"
                           className="dashboard-view-button"
-                          onClick={() => openResults(interview.id)}
+                          onClick={() => void openResults(interview.id)}
+                          disabled={openingResultId !== null}
                         >
-                          View Results
-                          <span aria-hidden="true">→</span>
+                          {openingResultId === interview.id ? "Loading Results..." : "View Results"}
+                          {openingResultId !== interview.id && (
+                            <span aria-hidden="true">→</span>
+                          )}
                         </button>
                       ) : (
                         <span className="coding-history-in-progress">

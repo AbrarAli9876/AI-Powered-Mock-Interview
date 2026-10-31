@@ -223,6 +223,8 @@ export default function CodingInterview() {
     setIsLoadingResult,
   ] = useState(false);
 
+  const [isInterviewComplete, setIsInterviewComplete] = useState(false);
+
   const examples = useMemo(
     () =>
       currentQuestion
@@ -478,23 +480,9 @@ export default function CodingInterview() {
       );
 
       if (result.is_last_question) {
-        setIsLoadingResult(true);
-
-        const finalResult =
-          await getCodingInterviewResult(
-            sessionId,
-          );
-
-        navigate(
-          `/coding-interview/results/${encodeURIComponent(String(sessionId))}`,
-          {
-            state: {
-              result: finalResult,
-              sessionId,
-            },
-          },
-        );
-
+        // Keep the interview environment active until the candidate clicks
+        // View Results. Media cleanup happens in that button handler.
+        setIsInterviewComplete(true);
         return;
       }
     } catch (err) {
@@ -621,12 +609,8 @@ export default function CodingInterview() {
       const response = await skipCodingQuestion(sessionId);
 
       if (response.is_last_question || !response.next_question) {
-        const finalResult = await getCodingInterviewResult(sessionId);
-        await releaseInterviewMedia();
-        navigate(
-          `/coding-interview/results/${encodeURIComponent(String(sessionId))}`,
-          { state: { result: finalResult, sessionId } },
-        );
+        // Keep camera, screen sharing, and fullscreen active until View Results.
+        setIsInterviewComplete(true);
         return;
       }
 
@@ -1498,8 +1482,7 @@ export default function CodingInterview() {
 
                 )}
 
-                {isSubmitted &&
-                  submitResult?.isLastQuestion && (
+                {isInterviewComplete && (
 
                   <button
                     type="button"
@@ -1513,10 +1496,20 @@ export default function CodingInterview() {
                           true,
                         );
 
+                        // Load the result before releasing the interview media.
+                        // This prevents a failed request from leaving the
+                        // candidate on the interview page without active media.
                         const result =
                           await getCodingInterviewResult(
                             sessionId,
                           );
+
+                        // Tell the room's security listeners that this is an
+                        // intentional completion, not a camera/screen violation.
+                        sessionStorage.setItem(
+                          "codingInterviewViewingResults",
+                          String(sessionId),
+                        );
 
                         await releaseInterviewMedia();
 
@@ -1548,7 +1541,7 @@ export default function CodingInterview() {
                   >
                     {isLoadingResult
                       ? "Loading Result..."
-                      : "View Final Result →"}
+                      : "View Results →"}
                   </button>
 
                 )}

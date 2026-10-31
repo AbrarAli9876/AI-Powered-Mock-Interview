@@ -146,6 +146,13 @@ export default function CodingInterviewRoom() {
         return;
       }
 
+      // Normal completion releases both streams and exits fullscreen before
+      // the candidate opens the results page. Do not count that intentional
+      // fullscreen exit as a security warning.
+      const cameraStillActive = camera?.getTracks().some((track) => track.readyState === "live");
+      const displayStillActive = display?.getTracks().some((track) => track.readyState === "live");
+      if (!cameraStillActive && !displayStillActive) return;
+
       fullscreenExitCountRef.current += 1;
       const count = fullscreenExitCountRef.current;
 
@@ -161,13 +168,21 @@ export default function CodingInterviewRoom() {
       }
     };
 
+    const isIntentionalResultsNavigation = () =>
+      sessionStorage.getItem("codingInterviewViewingResults") ===
+      String(sessionId);
+
     const onDisplayEnded = () => {
+      if (isIntentionalResultsNavigation()) return;
+
       void terminate(
         "The interview ended because screen sharing was stopped."
       );
     };
 
     const onCameraEnded = () => {
+      if (isIntentionalResultsNavigation()) return;
+
       void terminate(
         "The interview ended because the camera was stopped."
       );
@@ -336,6 +351,11 @@ export default function CodingInterviewRoom() {
         "fullscreenchange",
         onFullscreenChange
       );
+
+      // Clear the intentional-results marker after leaving the interview room.
+      if (isIntentionalResultsNavigation()) {
+        sessionStorage.removeItem("codingInterviewViewingResults");
+      }
 
       // Do not stop camera/display streams in effect cleanup. React StrictMode
       // intentionally runs an extra setup/cleanup cycle in development; stopping
