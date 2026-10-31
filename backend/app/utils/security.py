@@ -1,5 +1,7 @@
+
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import hashlib
 
 import bcrypt
 from jose import JWTError, jwt
@@ -53,6 +55,37 @@ def create_access_token(
         algorithm=settings.ALGORITHM,
     )
 
+    # Diagnostic: generation configuration
+    secret_fingerprint = hashlib.sha256(
+        settings.SECRET_KEY.encode("utf-8")
+    ).hexdigest()[:12]
+
+    print(
+        "[JWT CONFIG] GENERATION:",
+        "algorithm =", settings.ALGORITHM,
+        "secret fingerprint =", secret_fingerprint,
+    )
+
+    # Immediately verify the newly generated token.
+    try:
+        jwt.decode(
+            encoded_jwt,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+        )
+
+        print(
+            "[JWT CONFIG] Immediate generation verification: SUCCESS"
+        )
+
+    except JWTError as exc:
+        print(
+            "[JWT CONFIG] Immediate generation verification: FAILED",
+            type(exc).__name__,
+            str(exc),
+        )
+        raise
+
     return encoded_jwt
 
 
@@ -60,12 +93,25 @@ def decode_access_token(token: str) -> dict[str, Any]:
     """
     Decode and validate a JWT access token.
     """
+
+    secret_fingerprint = hashlib.sha256(
+        settings.SECRET_KEY.encode("utf-8")
+    ).hexdigest()[:12]
+
+    print(
+        "[JWT CONFIG] VALIDATION:",
+        "algorithm =", settings.ALGORITHM,
+        "secret fingerprint =", secret_fingerprint,
+    )
+
     try:
         payload = jwt.decode(
             token,
             settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM],
         )
+
+        print("[JWT DEBUG] Token validation successful.")
 
         return payload
 
@@ -74,4 +120,5 @@ def decode_access_token(token: str) -> dict[str, Any]:
             f"[JWT DEBUG] Validation error: "
             f"{type(exc).__name__}: {exc}"
         )
+
         raise JWTError("Invalid or expired token.") from exc
