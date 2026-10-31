@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy.orm import Session
-
+import hashlib
 from app.core.exceptions import (
     InactiveUserException,
     UserNotFoundException,
@@ -24,6 +24,10 @@ def get_current_user(
     try:
         payload = decode_access_token(token)
         print("[AUTH DEBUG] JWT decoded successfully")
+        print(
+    "[TOKEN DEBUG] Received fingerprint:",
+    hashlib.sha256(token.encode()).hexdigest()[:12]
+)
 
         user_id = payload.get("sub")
         print(f"[AUTH DEBUG] JWT subject: {user_id}")

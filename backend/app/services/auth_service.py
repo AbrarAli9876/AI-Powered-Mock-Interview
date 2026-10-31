@@ -1,3 +1,6 @@
+
+import hashlib
+
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -75,6 +78,16 @@ class AuthService:
                 "email": user.email,
                 "role": user.role.value,
             }
+        )
+
+        # Diagnostic: log a short fingerprint, never the actual token.
+        token_fingerprint = hashlib.sha256(
+            access_token.encode("utf-8")
+        ).hexdigest()[:12]
+
+        print(
+            "[TOKEN DEBUG] Generated fingerprint:",
+            token_fingerprint,
         )
 
         return Token(
