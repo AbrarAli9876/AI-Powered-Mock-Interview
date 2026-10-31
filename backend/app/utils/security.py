@@ -70,4 +70,8 @@ def decode_access_token(token: str) -> dict[str, Any]:
         return payload
 
     except JWTError as exc:
+        print(
+            f"[JWT DEBUG] Validation error: "
+            f"{type(exc).__name__}: {exc}"
+        )
         raise JWTError("Invalid or expired token.") from exc
