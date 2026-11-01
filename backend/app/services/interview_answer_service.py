@@ -312,42 +312,34 @@ class InterviewAnswerService:
             )
 
         # -----------------------------------------------------
-
-        # Update adaptive performance
-
+        # Update adaptive difficulty from the latest three scores
         # -----------------------------------------------------
 
-        (
+        # The current answer has already been flushed, so it is included
+        # in this query. Fetch newest first to evaluate the latest streak.
+        self.db.flush()
+        recent_score_rows = (
+            self.db.query(InterviewAnswer.overall_score)
+            .filter(
+                InterviewAnswer.session_id == session.id,
+                InterviewAnswer.overall_score.isnot(None),
+            )
+            .order_by(InterviewAnswer.id.desc())
+            .limit(self.adaptive_service.STREAK_LIMIT)
+            .all()
+        )
+        recent_scores = [float(row[0]) for row in recent_score_rows]
 
-            next_difficulty,
-
-            poor_streak,
-
-            strong_streak,
-
-        ) = self.adaptive_service.update_performance(
-
+        session.current_difficulty = self.adaptive_service.update_performance(
             current_difficulty=session.current_difficulty,
-
-            poor_streak=session.poor_streak,
-
-            strong_streak=session.strong_streak,
-
-            score=float(answer.overall_score),
-
+            recent_scores=recent_scores,
         )
 
-        # -----------------------------------------------------
-
-        # Update difficulty
-
-        # -----------------------------------------------------
-
-        session.current_difficulty = next_difficulty
-
-        session.poor_streak = poor_streak
-
-        session.strong_streak = strong_streak
+        # These legacy counters are retained in the database for backward
+        # compatibility, but the rolling three-score window now determines
+        # adaptation for all three score bands (Easy, Medium, and Hard).
+        session.poor_streak = 0
+        session.strong_streak = 0
 
         # -----------------------------------------------------
 
@@ -602,99 +594,18 @@ class InterviewAnswerService:
     # =========================================================
 
     def _has_unanswered_questions(
-
         self,
-
         session: InterviewSession,
-
     ) -> bool:
-
-        """
-
-        Determine whether at least one unanswered question
-
-        remains for the interview.
-
-        The difficulty fallback is:
-
-        EASY:
-
-            EASY -> MEDIUM -> HARD
-
-        MEDIUM:
-
-            MEDIUM -> HARD -> EASY
-
-        HARD:
-
-            HARD -> MEDIUM -> EASY
-
-        """
-
-        difficulty_order = {
-
-            QuestionDifficulty.EASY: [
-
-                QuestionDifficulty.EASY,
-
-                QuestionDifficulty.MEDIUM,
-
-                QuestionDifficulty.HARD,
-
-            ],
-
-            QuestionDifficulty.MEDIUM: [
-
-                QuestionDifficulty.MEDIUM,
-
-                QuestionDifficulty.HARD,
-
-                QuestionDifficulty.EASY,
-
-            ],
-
-            QuestionDifficulty.HARD: [
-
-                QuestionDifficulty.HARD,
-
-                QuestionDifficulty.MEDIUM,
-
-                QuestionDifficulty.EASY,
-
-            ],
-
-        }
-
-        difficulties = difficulty_order[
-
-            session.current_difficulty
-
-        ]
-
-        for difficulty in difficulties:
-
-            question = (
-
-                self.question_service.get_next_question(
-
-                    session_id=session.id,
-
-                    topic_id=session.topic_id,
-
-                    difficulty=difficulty,
-
-                )
-
-            )
-
-            if question is not None:
-
-                return True
-
-        return False
+        """Return whether an unanswered question exists at the current difficulty."""
+        question = self.question_service.get_next_question(
+            session_id=session.id,
+            topic_id=session.topic_id,
+            difficulty=session.current_difficulty,
+        )
+        return question is not None
 
     # =========================================================
-
     # CALCULATE OVERALL SCORE
 
     # =========================================================

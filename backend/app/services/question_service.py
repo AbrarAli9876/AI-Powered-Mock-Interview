@@ -93,40 +93,24 @@ class QuestionService:
         topic_id: int,
         difficulty: QuestionDifficulty,
     ) -> Question | None:
+        """Return an unanswered question at exactly the requested difficulty.
+
+        No fallback is performed. If this difficulty has no remaining
+        questions, None is returned so the caller can complete the interview.
+        """
         answered_question_ids = select(InterviewAnswer.question_id).where(
             InterviewAnswer.session_id == session_id
         )
-        difficulty_order = {
-            QuestionDifficulty.EASY: [
-                QuestionDifficulty.EASY,
-                QuestionDifficulty.MEDIUM,
-                QuestionDifficulty.HARD,
-            ],
-            QuestionDifficulty.MEDIUM: [
-                QuestionDifficulty.MEDIUM,
-                QuestionDifficulty.EASY,
-                QuestionDifficulty.HARD,
-            ],
-            QuestionDifficulty.HARD: [
-                QuestionDifficulty.HARD,
-                QuestionDifficulty.MEDIUM,
-                QuestionDifficulty.EASY,
-            ],
-        }
-        for current_difficulty in difficulty_order[difficulty]:
-            question = (
-                self.db.query(Question)
-                .filter(
-                    Question.topic_id == topic_id,
-                    Question.difficulty == current_difficulty,
-                    ~Question.id.in_(answered_question_ids),
-                )
-                .order_by(func.rand())
-                .first()
+        return (
+            self.db.query(Question)
+            .filter(
+                Question.topic_id == topic_id,
+                Question.difficulty == difficulty,
+                ~Question.id.in_(answered_question_ids),
             )
-            if question:
-                return question
-        return None
+            .order_by(func.rand())
+            .first()
+        )
 
     def get_question_by_id(self, question_id: int) -> Question | None:
         return (

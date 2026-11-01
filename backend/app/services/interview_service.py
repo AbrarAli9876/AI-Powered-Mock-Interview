@@ -352,106 +352,23 @@ class InterviewService:
 
 
         # -----------------------------------------------------
-
-        # Adaptive difficulty fallback order
-
+        # Select only at the session's current adaptive difficulty
         # -----------------------------------------------------
 
+        question = self.question_service.get_next_question(
+            session_id=session_id,
+            topic_id=interview.topic_id,
+            difficulty=interview.current_difficulty,
+        )
 
-
-        difficulty_order = {
-
-            QuestionDifficulty.EASY: [
-
-                QuestionDifficulty.EASY,
-
-                QuestionDifficulty.MEDIUM,
-
-                QuestionDifficulty.HARD,
-
-            ],
-
-            QuestionDifficulty.MEDIUM: [
-
-                QuestionDifficulty.MEDIUM,
-
-                QuestionDifficulty.HARD,
-
-                QuestionDifficulty.EASY,
-
-            ],
-
-            QuestionDifficulty.HARD: [
-
-                QuestionDifficulty.HARD,
-
-                QuestionDifficulty.MEDIUM,
-
-                QuestionDifficulty.EASY,
-
-            ],
-
-        }
-
-
-
-        difficulties = difficulty_order[
-
-            interview.current_difficulty
-
-        ]
-
-
+        if question is not None:
+            interview.current_question_id = question.id
+            self.db.commit()
+            self.db.refresh(interview)
+            return question
 
         # -----------------------------------------------------
-
-        # Find unanswered question
-
-        # -----------------------------------------------------
-
-
-
-        for difficulty in difficulties:
-
-
-
-            question = (
-
-                self.question_service.get_next_question(
-
-                    session_id=session_id,
-
-                    topic_id=interview.topic_id,
-
-                    difficulty=difficulty,
-
-                )
-
-            )
-
-
-
-            if question:
-
-
-
-                interview.current_question_id = question.id
-
-
-
-                self.db.commit()
-
-                self.db.refresh(interview)
-
-
-
-                return question
-
-
-
-        # -----------------------------------------------------
-
-        # No unanswered questions remain
+        # No unanswered questions remain at the required difficulty
 
         # -----------------------------------------------------
 
