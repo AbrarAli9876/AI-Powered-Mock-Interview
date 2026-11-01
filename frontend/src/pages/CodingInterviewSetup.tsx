@@ -193,20 +193,23 @@ function CodingInterviewSetup() {
 
       <main className="relative z-10 mx-auto max-w-6xl px-6 py-12">
 
+  {/* KSSEM College Logo - Top Left */}
+  <div className="mb-5 flex justify-start">
+    <img
+      src="/kssem-logo.png"
+      alt="KSSEM College Logo"
+      className="h-14 w-auto max-w-[150px] object-contain"
+    />
+  </div>
 
-        {/* ===================================================
-            BACK
-        ==================================================== */}
-
-        <button
-          type="button"
-          onClick={() =>
-            navigate("/home")
-          }
-          className="mb-8 text-sm text-slate-400 hover:text-white"
-        >
-          ← Back to home
-        </button>
+  {/* Back to home */}
+  <button
+    type="button"
+    onClick={() => navigate("/home")}
+    className="mb-8 text-sm text-slate-400 hover:text-white"
+  >
+    ← Back to home
+  </button>
 
 
         {/* ===================================================

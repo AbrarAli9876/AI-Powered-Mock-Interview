@@ -775,13 +775,25 @@ export default function InterviewRoom() {
             TOP BAR
         ====================================================== */}
         <header className="flex items-center justify-between border-b border-white/[0.06] pb-5">
-          <div>
-            <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-violet-400">
-              Live interview
-            </div>
-            <h1 className="mt-1 font-display text-lg font-semibold text-white">Interview Room</h1>
-          </div>
-          <button
+  {/* Left side: College logo and interview title */}
+  <div className="flex items-center gap-5">
+    <img
+      src="/kssem-logo.png"
+      alt="KSSEM College Logo"
+      className="h-12 w-auto max-w-[130px] shrink-0 object-contain"
+    />
+
+    <div>
+      <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-violet-400">
+        Live interview
+      </div>
+      <h1 className="mt-1 font-display text-lg font-semibold text-white">
+        Interview Room
+      </h1>
+    </div>
+  </div>
+
+  <button
             type="button"
             onClick={() => setShowExitConfirmation(true)}
             disabled={isFinishing}

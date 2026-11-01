@@ -184,16 +184,26 @@ export default function InterviewSetup() {
     <div className="app-background min-h-screen">
       <div className="app-grid" />
 
-      <main className="relative z-10 mx-auto w-full max-w-6xl px-6 py-10 sm:px-8 lg:px-10">
-        {/* PAGE NAVIGATION */}
-        <button
-          type="button"
-          onClick={() => navigate("/home")}
-          className="mb-8 inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
-        >
-          <span aria-hidden="true">←</span>
-          Back to home
-        </button>
+     <main className="relative z-10 mx-auto w-full max-w-6xl px-6 py-10 sm:px-8 lg:px-10">
+
+  {/* KSSEM College Logo - Top Left */}
+  <div className="mb-5 flex justify-start">
+    <img
+      src="/kssem-logo.png"
+      alt="KSSEM College Logo"
+      className="h-14 w-auto max-w-[150px] object-contain"
+    />
+  </div>
+
+  {/* PAGE NAVIGATION */}
+  <button
+    type="button"
+    onClick={() => navigate("/home")}
+    className="mb-8 inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-white"
+  >
+    <span aria-hidden="true">←</span>
+    Back to home
+  </button>
 
         {/* PAGE HEADER */}
         <header className="mb-10">

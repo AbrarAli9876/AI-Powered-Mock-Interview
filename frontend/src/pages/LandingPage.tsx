@@ -32,27 +32,29 @@ function LandingPage() {
 
       <header className="relative z-10 border-b border-white/[0.06]">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-6 lg:px-8">
-          {/* Logo */}
-          <button
-            type="button"
-            onClick={() => navigate("/")}
-            className="group flex items-center gap-3"
-            aria-label="Go to home"
-          >
-            <div className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-violet-400/30 bg-violet-500/10">
-              <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-violet-300 shadow-[0_0_16px_rgba(196,181,253,0.9)]" />
-            </div>
+         {/* KSSEM College Logo */}
+<button
+  type="button"
+  onClick={() => navigate("/")}
+  className="group flex items-center gap-3"
+  aria-label="Go to home"
+>
+  <img
+    src="/kssem-logo.png"
+    alt="KSSEM - K S School of Engineering and Management"
+    className="h-12 w-auto object-contain"
+  />
 
-            <div className="text-left">
-              <div className="text-sm font-semibold tracking-wide">
-                AI Mock Interview
-              </div>
+  <div className="text-left">
+    <div className="text-sm font-semibold tracking-wide">
+      AI Mock Interview
+    </div>
 
-              <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500">
-                Interview Lab
-              </div>
-            </div>
-          </button>
+    <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500">
+      Interview Lab
+    </div>
+  </div>
+</button>
 
           {/* Navigation */}
           <nav className="hidden items-center gap-8 md:flex">

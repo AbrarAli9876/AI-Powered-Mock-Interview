@@ -324,6 +324,12 @@ export default function Dashboard() {
         {/* HEADER */}
         <header className="dashboard-header">
           <div>
+            {/* KSSEM College Logo */}
+    <img
+      src="/kssem-logo.png"
+      alt="KSSEM College Logo"
+      className="mb-5 h-14 w-auto object-contain"
+    />
             <div className="dashboard-eyebrow">
               PERFORMANCE CENTER
             </div>

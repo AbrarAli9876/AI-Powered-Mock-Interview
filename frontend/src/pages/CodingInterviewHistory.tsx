@@ -149,11 +149,20 @@ export default function CodingInterviewHistory() {
   return (
     <div className="dashboard-page">
       <div className="dashboard-container">
-        <header className="dashboard-header">
-          <div>
-            <div className="dashboard-eyebrow">
-              CODING INTERVIEW HISTORY
-            </div>
+     <header className="dashboard-header">
+  <div>
+    {/* KSSEM College Logo - Top Left */}
+    <div className="mb-5 flex justify-start">
+      <img
+        src="/kssem-logo.png"
+        alt="KSSEM College Logo"
+        className="h-14 w-auto max-w-[150px] object-contain"
+      />
+    </div>
+
+    <div className="dashboard-eyebrow">
+      CODING INTERVIEW HISTORY
+    </div>
 
             <h1>Your coding interviews</h1>
 

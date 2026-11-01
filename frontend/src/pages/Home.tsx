@@ -335,6 +335,12 @@ export default function Home() {
             aria-label="Go to home"
           >
 
+<img
+  src="/kssem-logo.png"
+  alt="KSSEM College Logo"
+  className="h-12 w-auto max-w-[180px] object-contain"
+/>
+
             <div
               className="
                 relative
@@ -371,12 +377,13 @@ export default function Home() {
                   text-violet-300
                 "
               >
+                
                 AI
               </span>
 
             </div>
 
-
+            
             <div>
 
               <div
@@ -906,7 +913,7 @@ export default function Home() {
                   </span>
                   {averageScore !== null && (
                     <span className="text-xs font-medium text-emerald-400">
-                      {averageScore >= 80 ? "Above average" : averageScore >= 60 ? "On track" : "Needs practice"}
+                      {averageScore >= 80 ? "Strong performance" : averageScore >= 60 ? "On track" : "Needs practice"}
                     </span>
                   )}
                 </div>

@@ -364,15 +364,25 @@ export default function InterviewResult() {
   );
 
   return (
+    
     <div className="result-page">
       <div className="result-container">
-        <header className="result-header">
-          <button
-            className="result-back-button"
-            onClick={() => navigate("/dashboard")}
-          >
-            ← Back to Dashboard
-          </button>
+       <header className="result-header">
+  {/* KSSEM College Logo - Top Left */}
+  <div className="mb-5 flex justify-start">
+    <img
+      src="/kssem-logo.png"
+      alt="KSSEM College Logo"
+      className="h-14 w-auto max-w-[150px] object-contain"
+    />
+  </div>
+
+  <button
+    className="result-back-button"
+    onClick={() => navigate("/dashboard")}
+  >
+    ← Back to Dashboard
+  </button>
 
           <div className="result-eyebrow">INTERVIEW REPORT</div>
 

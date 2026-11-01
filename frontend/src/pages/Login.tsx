@@ -1,3 +1,4 @@
+
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -57,8 +58,18 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6">
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 py-10">
       <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-2xl">
+
+        {/* KSSEM College Logo */}
+        <div className="mb-6 flex justify-center">
+          <img
+            src="/kssem-logo.png"
+            alt="KSSEM College Logo"
+            className="h-16 w-auto object-contain"
+          />
+        </div>
+
         <button
           onClick={() => navigate("/")}
           className="mb-8 text-sm text-slate-400 hover:text-white"

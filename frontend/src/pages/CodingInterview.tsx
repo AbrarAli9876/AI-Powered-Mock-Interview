@@ -823,19 +823,22 @@ export default function CodingInterview() {
 
         <div className="mx-auto flex max-w-[1600px] items-center justify-between px-5 py-4">
 
-          <div className="flex items-center gap-4">
+  <div className="flex items-center gap-4">
 
-            <button
-              type="button"
-              onClick={() =>
-                setShowExitConfirmation(
-                  true,
-                )
-              }
-              className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-400 hover:text-white"
-            >
-              ← Exit
-            </button>
+    {/* KSSEM College Logo - Top Left */}
+    <img
+      src="/kssem-logo.png"
+      alt="KSSEM College Logo"
+      className="h-10 w-auto max-w-[110px] shrink-0 object-contain"
+    />
+
+    <button
+      type="button"
+      onClick={() => setShowExitConfirmation(true)}
+      className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-400 hover:text-white"
+    >
+      ← Exit
+    </button>
 
             <div>
 

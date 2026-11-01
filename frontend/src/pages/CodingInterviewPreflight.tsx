@@ -425,8 +425,18 @@ export default function CodingInterviewPreflight() {
   return (
     <div className="app-background min-h-screen px-5 py-8 sm:px-8">
       <main className="mx-auto flex min-h-[85vh] w-full max-w-3xl items-center justify-center">
-        <section className="glass-panel w-full rounded-3xl border border-white/[0.07] p-6 sm:p-9">
-          <div className="flex items-center justify-between gap-2">
+  <section className="glass-panel w-full rounded-3xl border border-white/[0.07] p-6 sm:p-9">
+
+    {/* KSSEM College Logo - Top Left */}
+    <div className="mb-5 flex justify-start">
+      <img
+        src="/kssem-logo.png"
+        alt="KSSEM College Logo"
+        className="h-14 w-auto max-w-[150px] object-contain"
+      />
+    </div>
+
+    <div className="flex items-center justify-between gap-2">
             <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-violet-400">Coding interview · Security check</p>
             <span className="text-xs text-slate-500">{details.number}</span>
           </div>

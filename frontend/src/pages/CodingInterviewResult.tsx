@@ -350,9 +350,18 @@ export default function CodingInterviewResult() {
     <main className="app-background min-h-screen px-4 py-10 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <header className="mb-8">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.35em] text-violet-300">
-            Coding interview · Results
-          </p>
+  {/* KSSEM College Logo - Top Left */}
+  <div className="mb-5 flex justify-start">
+    <img
+      src="/kssem-logo.png"
+      alt="KSSEM College Logo"
+      className="h-14 w-auto max-w-[150px] object-contain"
+    />
+  </div>
+
+  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.35em] text-violet-300">
+    Coding interview · Results
+  </p>
 
           <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
             <div>

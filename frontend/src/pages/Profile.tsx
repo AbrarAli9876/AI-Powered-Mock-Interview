@@ -270,7 +270,11 @@ export default function Profile() {
               text-left
             "
           >
-
+<img
+  src="/kssem-logo.png"
+  alt="KSSEM College Logo"
+  className="h-12 w-auto max-w-[180px] object-contain"
+/>
             <div
               className="
                 flex
